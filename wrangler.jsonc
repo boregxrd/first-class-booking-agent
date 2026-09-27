@@ -8,12 +8,16 @@
     {
       "binding": "DB",
       "database_name": "dwc-booking-db",
-      "database_id": "dwc-booking-db-id",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["* * * * *"]
+  },
+  "queues": {
+    "producers": [{ "binding": "MESSAGE_QUEUE", "queue": "dwc-messages" }],
+    "consumers": [{ "queue": "dwc-messages", "max_batch_size": 1, "max_batch_timeout": 1, "max_retries": 5, "dead_letter_queue": "dwc-messages-dlq" }]
   },
   "observability": {
     "enabled": true

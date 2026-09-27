@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from '../../index.js';
-import { createQueueHandler, handleQueue } from '../runtime/queue.js';
+import { handleQueue } from '../runtime/queue.js';
 import { canProcessMessages } from '../runtime/test-access.js';
 
 test('thin entrypoint preserves the Meta challenge endpoint', async () => {
@@ -25,20 +25,12 @@ test('messaging defaults to observation and test mode allows exact sender IDs on
 });
 
 test('unconfigured queue cannot silently acknowledge messages', async () => {
-  await assert.rejects(handleQueue({} as MessageBatch<unknown>), /not configured/);
+  await assert.rejects(handleQueue({} as MessageBatch<unknown>, { META_APP_SECRET: 'test', META_VERIFY_TOKEN: 'test' }), /DB is required/);
 });
 
-test('queue acknowledges durable completion and retries processor failures', async () => {
+test('observe mode does not run model or sends when queue wakes up', async () => {
   let acked = 0;
-  let retried = 0;
-  const body = {
-    identity: { channel: 'instagram', businessAccountId: 'gym', senderId: 'prospect' },
-    providerMessageId: 'incoming', sentAt: '2026-09-27T18:00:00Z', receivedAt: '2026-09-27T18:00:00Z', text: 'hola',
-  };
-  const batch = { messages: [{ id: 'queue-1', body, ack() { acked++; }, retry() { retried++; } }] } as unknown as MessageBatch<unknown>;
-  await createQueueHandler(async () => ({ reply: 'hola', bookingStatus: 'none', usage: { inputTokens: 1, outputTokens: 1 } }))(batch);
+  const batch = { ackAll() { acked++; } } as unknown as MessageBatch<unknown>;
+  await handleQueue(batch, { META_APP_SECRET: 'test', META_VERIFY_TOKEN: 'test', DB: {} as D1Database });
   assert.equal(acked, 1);
-  await createQueueHandler(async () => { throw new Error('storage failed'); })(batch);
-  assert.equal(acked, 1);
-  assert.equal(retried, 1);
 });

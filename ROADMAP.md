@@ -1,31 +1,31 @@
 # TODO
 
+Checked items are implemented and tested locally; live-provider verification is still required.
+
 ## Booking service — friend
 
-- [x] One shared one-hour Calendar event per slot, listing each prospect's name, phone/Instagram, language and booking ID.
-- [x] Reschedule/cancel individual prospects without moving or deleting everyone else's event.
-- [x] Prevent duplicate active bookings; persist changes before Calendar sync and retry interrupted operations.
-- [x] Rebuild rosters from D1 with Calendar conflict protection; test shared-slot updates and failures locally.
-- [ ] Define how owner edits/deletes a shared event affect the entire class; add reconciliation and alerts.
-- [ ] Finish notification retry/lease recovery, delivery tracking and cancellation-during-send tests.
-- [ ] Confirm lead time, booking horizon, closures, repeat-trial rules and reminder timing.
-- [ ] Set up Google Calendar credentials and approved WhatsApp templates.
-- [ ] Apply all migrations, then test shared rosters, rescheduling, cancellation and per-person reminders against real providers.
+- [x] Shared hourly Calendar rosters; individual bookings, changes and cancellations.
+- [x] Duplicate prevention, interrupted-operation recovery and concurrent roster protection.
+- [x] Owner-edit policy: pause the whole slot's notifications and alert on time changes/deletion; rebuild edited roster text from D1.
+- [x] Notification retries, lease recovery, delivery tracking and cancellation-during-send protection.
+- [x] Local tests for Calendar/database failures, owner edits, consent and out-of-order receipts.
+- [ ] Owner: approve the display-only Calendar policy, lead time, booking horizon, closures, repeat-trial rules and reminder timing.
+- [ ] Set up Google Calendar credentials, WhatsApp number and approved templates.
+- [ ] Test real shared rosters, rescheduling, cancellation and per-person reminders.
 
 ## Agent and credentials — you
 
-- [x] Accept name plus phone or Instagram handle; request WhatsApp permission only when a phone is supplied.
-- [ ] Process incoming messages through a durable queue, in order per customer.
-- [ ] Save outgoing replies and retry safely without losing or duplicating messages.
-- [ ] Finish webhook validation and fix sending for the Instagram Login API.
-- [ ] Handle separate channel credentials, token expiry, messaging windows and send failures.
-- [ ] Finish Instagram/WhatsApp identity linking, opt-outs and language handling.
-- [ ] Add reschedule/cancel tools; set up history cleanup and error monitoring.
-- [ ] Add tests for simultaneous messages, failed sends and webhook retries.
-- [ ] Create Cloudflare account, deploy Worker, create D1/Queues and apply migrations.
-- [ ] Add the OpenAI key; create Meta app and have your brother authorize Instagram.
-- [ ] Connect webhooks; receive a test DM in observe-only mode, then allow only your sender ID.
-- [ ] Confirm missing gym FAQs and coordinate testing/cutover with the existing bot.
-- [ ] Test two prospects booking the same hour: one Calendar event, two roster entries, separate confirmations.
+- [x] Phone or Instagram contact, explicit booking confirmation, reschedule/cancel tools.
+- [x] Durable inbox/queue processing, per-conversation locking and ordered replies.
+- [x] Outgoing-message persistence, bounded retries and alerts for uncertain sends instead of blind resends.
+- [x] Runtime webhook validation, Instagram Login sending, separate channel credentials and messaging-window checks.
+- [x] Token-expiry checks/alerts, secure one-time cross-channel linking, opt-outs and language commands.
+- [x] History retention, structured usage/error logs, scheduled recovery and operational alerts.
+- [x] Local concurrency/failure tests and two-prospect end-to-end flow with mocked providers.
+- [ ] Create Cloudflare account/resources, replace placeholder DB ID, apply migrations and deploy.
+- [ ] Add OpenAI/Meta credentials and token expiry dates; have your brother authorize Instagram.
+- [ ] Connect webhooks; observe a real DM, then enable only your sender IDs for testing.
+- [ ] Owner: confirm missing FAQs and coordinate the existing bot's testing/cutover.
+- [ ] Verify actual model tone/tool behavior, real Meta sends and the complete two-prospect booking flow.
 
-Design/testing details: [review](docs/REVIEW.md). Account setup: [guide](docs/meta/README.md).
+Setup: [guide](docs/meta/README.md). Runtime/recovery: [operations](docs/OPERATIONS.md).

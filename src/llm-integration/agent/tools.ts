@@ -11,8 +11,16 @@ export const proposalSchema = z.object({
 }).strict().refine((value) => Boolean(value.phone || value.instagramHandle), 'A phone number or Instagram handle is required');
 
 export type TrialProposal = z.infer<typeof proposalSchema>;
+export const rescheduleSchema = z.object({ bookingId: z.string().min(1), startsAt: z.string().datetime() }).strict();
+export const cancelSchema = z.object({ bookingId: z.string().min(1) }).strict();
 
 export const agentTools: ModelTool[] = [
+  { type: 'function', function: { name: 'getBooking', description: 'Read this customer’s current trial booking; never supply customer identity.', strict: true,
+    parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } } },
+  { type: 'function', function: { name: 'proposeReschedule', description: 'Propose changing this customer’s booking time. Requires a new explicit confirmation before modifying it.', strict: true,
+    parameters: { type: 'object', properties: { bookingId: { type: 'string' }, startsAt: { type: 'string', description: 'UTC ISO instant ending in Z' } }, required: ['bookingId', 'startsAt'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'proposeCancellation', description: 'Propose cancelling this customer’s trial. Requires a new explicit confirmation.', strict: true,
+    parameters: { type: 'object', properties: { bookingId: { type: 'string' } }, required: ['bookingId'], additionalProperties: false } } },
   {
     type: 'function',
     function: {

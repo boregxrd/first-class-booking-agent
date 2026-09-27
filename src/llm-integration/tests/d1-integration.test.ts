@@ -17,7 +17,7 @@ test('real local D1 persists contact, consent, checkpoints, recent history and t
         phone: '+12145550101', purpose: 'trial_confirmation_and_reminders', grantedAt: TEST_NOW,
         sourceIdentity: identity, sourceMessageId: 'confirm', revokedAt: null,
       };
-      session.state.bookingOperation = { startsAt: TEST_SLOT, context: bookingContext(session.state.customer.id, 'stable-key') };
+      session.state.bookingOperation = { action: 'book', startsAt: TEST_SLOT, context: bookingContext(session.state.customer.id, 'stable-key') };
       await session.save(session.state);
     });
     await store.withConversation(identity, async (session) => {

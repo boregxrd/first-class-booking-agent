@@ -1,49 +1,32 @@
-# Messaging and agent integration (Part A)
+# Agent and messaging runtime
 
-`src/index.ts` remains the Worker entrypoint. New Part A application code lives here. For the latest integrated status and remaining defects, see [ROADMAP.md](../../ROADMAP.md) and [docs/REVIEW.md](../../docs/REVIEW.md).
+`src/index.ts` only mounts HTTP handlers and delegates queue/cron work. Composition lives in `src/runtime/factory.ts`.
 
-## Gym context
+## Message flow
 
-- Edit `gym-context.ts` for approved business facts, FAQs, advertised hours and voice preferences.
-- Edit `agent/prompt.ts` for the booking conversation rules and tone examples.
-- Unknown owner details are explicitly `null`; fill them with approved information rather than guesses.
-- `BookingService.getClassSchedule()` owns the executable schedule, duration and date-specific closures. Its returned schedule replaces advertised hours in the prompt. Coordinate schedule changes with the Calendar owner.
+1. `src/channels/meta.ts` verifies the signature and runtime payload shape, filters accounts/echoes/test users, then commits normalized messages to D1's inbox.
+2. Cloudflare Queues wakes the consumer. Cron also scans the inbox, so a failed queue publication does not lose committed messages.
+3. The processor uses a recoverable, fenced D1 lease per channel/account/sender. Inbox sequence preserves receipt order; failed earlier turns cannot be overtaken.
+4. `agent/client.ts` calls OpenAI using the prompt and bounded history. The model proposes bookings/changes; explicit customer confirmation authorizes execution.
+5. `conversations/d1-store.ts` atomically commits state, processed-turn result and outgoing reply. Replayed webhooks do not create another reply.
+6. The outbox sender uses the correct channel API and token, enforcing the messaging window and send-state recovery rules.
 
-`buildSystemPrompt({ now, schedule })` is provider-independent. The processor sends it as the system instruction, then appends recent customer/assistant messages and tool results in their proper roles. Customer text must not be interpolated into system instructions.
+## Configuration and behavior
 
-## Model and processor
+- Edit `gym-context.ts` for approved facts/FAQs/voice; `agent/prompt.ts` for conversation guidance.
+- The authoritative schedule lives in `src/gym/schedule.ts`. Classes last 60 minutes, timezone `America/Chicago`.
+- Model defaults to `gpt-4.1-mini`, configurable with `OPENAI_MODEL`; 20-second request timeout, 600 output tokens and four rounds per turn.
+- Tools: `getClassSchedule`, `getBooking`, `proposeTrial`, `proposeReschedule`, `proposeCancellation`. Identity, revision and operation keys are supplied by code.
+- A prospect needs a name and phone or Instagram handle. A phone-based confirmation asks for WhatsApp consent; Instagram-only bookings do not create WhatsApp notifications.
+- Proposals expire after 30 minutes. A correction invalidates the previous proposal. `sí confirmo` / `yes confirm` executes the current action.
+- `STOP`, `unsubscribe`, `no más mensajes`, or `cancelar mensajes` revokes notification consent without cancelling the booking.
+- `English` / `Español` changes the stored language. Common English/Spanish greetings also set the initial language.
+- From Instagram, `vincular WhatsApp` / `link WhatsApp` issues a 15-minute one-time code after a phone is recorded. Send `vincular CODE` / `link CODE` from that exact WhatsApp number. A phone match alone never links identities.
 
-- `agent/client.ts`: Workers-native OpenAI Chat Completions client, default `gpt-4.1-mini`, configurable via `OPENAI_MODEL`. Includes a 20-second timeout, runtime response validation, usage counts and a 600-token output cap. Request failures propagate to the caller; no hidden retries.
-- `agent/tools.ts`: strict tool argument validation and Dallas schedule checks. The model can read the schedule or **propose** a trial; it cannot directly create a booking.
-- `conversations/processor.ts`: up to four model rounds per turn, latest 20 text messages, persisted proposal/operation checkpoints and deterministic booking confirmation replies.
-- `conversations/store.ts`: required durable store interface. `d1-store.ts` now implements persistence, but serialization and outbound outbox are still pending. In-memory test fixtures are never used as a runtime fallback.
-- `runtime/create-processor.ts`: constructs the real model client and processor from Worker environment, a conversation store and Part B's BookingService.
-- `runtime/queue.ts`: validates normalized messages, acknowledges successful durable processing and requests retries after failures. The default exported handler deliberately fails until adapters are configured.
-- `webhooks/routes.ts`: HTTP plumbing for the existing Meta adapter. `src/index.ts` mounts these routes and delegates queue handling.
+Google Calendar contains one shared roster per hour; the agent never moves/deletes a whole event to modify one customer's booking.
 
-OpenAI's model page lists GPT-4.1 mini at $0.40 per million input tokens and $1.60 per million output tokens: https://developers.openai.com/api/docs/models/gpt-4.1-mini . At 5,000 calls with 2,000 input and 150 output tokens each, that's approximately $5.20 for the model; longer prompts and tool rounds increase this. Meta and Cloudflare charges are separate.
+## Delivery guarantees and limits
 
-### Booking confirmation
+D1 prevents duplicate processing and stores replies durably. Explicit provider rejections use bounded backoff. Network timeouts, missing provider IDs and interrupted sends become **unknown** and raise an alert rather than blindly resending. Exactly-once delivery across an external messaging API cannot be guaranteed without provider idempotency; see [operations](../../docs/OPERATIONS.md) for resolution.
 
-The model collects name, a phone number or Instagram handle, and class time, then calls `proposeTrial`. The processor validates these and emits a summary with a request to reply **“sí confirmo” / “yes confirm”**. With a phone, the summary also requests WhatsApp confirmation/reminder permission; Instagram-only bookings do not grant that consent. Only that reply to a current proposal calls BookingService; a model boolean is never authorization. The proposal expires after 30 minutes. A question or correction invalidates the old proposal, requiring a fresh summary. Other affirmative phrases currently need clarification rather than automatically booking.
-
-BookingService maintains **one shared one-hour Calendar event per slot**. Each customer still has an individual booking ID; the agent must never move/delete a Calendar event itself to change that customer's booking.
-
-The durable checkpoint saves the customer/consent and stable booking-operation key **before** invoking Calendar through BookingService. Retries reuse the key. Store implementations must serialize conversations, atomically persist processed-message results and pending outbound replies, and make customer fields available to BookingService. BookingService still enforces customer ownership, eligibility and idempotency. Outbound dispatch must enforce its own send-state policy; returning a cached turn must not resend an already delivered reply.
-
-### Remaining live wiring
-
-This is a tested processor core, **not yet a reliable end-to-end DM bot**. In default observe mode, Meta handlers log metadata only. Test/live modes currently invoke the processor inline; this must be replaced with durable ingestion. Remaining integration work:
-
-1. Finish D1 conversation serialization and outbound outbox (base storage now exists).
-2. Webhook normalization + durable queue publication before HTTP acknowledgement.
-3. Queue bindings/retry limits/dead-letter queue in Wrangler.
-4. Connect the composed services in `src/runtime/factory.ts` to `createQueueHandler`.
-5. Correct the outbound Instagram Login adapter and add reliable dispatch/delivery tracking; deferred booking-operation reconciliation.
-6. Change/cancel tools, identity linking and consent withdrawal handling before production rollout.
-
-Store `OPENAI_API_KEY` as a Worker secret; use `.dev.vars` locally. Workers host the HTTP API/processor. D1 stores application state. Queues hand off webhook work. Google Calendar remains Part B's integration. Tests use mocked provider requests and a test-only store; no live model or Meta calls are made.
-
-Run `npm run typecheck` and `npm test`.
-
-Class duration is confirmed as **60 minutes**. Before launch, confirm prices (if shared), parking, what to bring, arrival guidance, cancellation/repeat-trial rules, closures and booking lead time with the owner. Part B's authoritative schedule should also use this duration.
+Code is wired, but no real credentials or deployment have been used. Unit/local-D1 tests mock external providers. Run `npm run typecheck` and `npm test`; complete the live tests in [ROADMAP.md](../../ROADMAP.md) before public use.

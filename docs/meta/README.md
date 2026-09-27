@@ -2,7 +2,7 @@
 
 ## First milestone
 
-Receive a test Instagram DM in the deployed Worker's logs. This proves account authorization and webhook delivery, not a complete AI conversation. Default observe mode logs metadata without invoking the model or sending a reply. D1 and outbound adapter code now exist, but require the integration fixes documented in `docs/REVIEW.md`.
+Receive a test Instagram DM in the deployed Worker's logs. This proves account authorization and webhook delivery, not a complete AI conversation. Default observe mode logs metadata without invoking the model or sending a reply. The durable runtime is implemented; follow `docs/OPERATIONS.md` for migrations, queue resources and enabling test traffic.
 
 Cloudflare Workers runs our HTTPS API and processing code. D1 stores state. Queues runs durable background processing. OpenAI generates responses. Meta delivers incoming events and accepts outgoing replies. No custom domain is needed for the first milestone: a `workers.dev` HTTPS URL works.
 
@@ -77,10 +77,10 @@ For later model/outbound testing:
 
 ```sh
 npx wrangler secret put OPENAI_API_KEY
-npx wrangler secret put META_ACCESS_TOKEN
+npx wrangler secret put META_INSTAGRAM_ACCESS_TOKEN
 ```
 
-Use the Instagram Login token for `META_ACCESS_TOKEN` when implementing that sender. The account ID and API version are non-secret configuration the outbound adapter will also need. OpenAI and outbound Meta secrets are not required just to verify receipt of a webhook.
+Use the Instagram Login token for `META_INSTAGRAM_ACCESS_TOKEN`. Set `META_INSTAGRAM_ACCOUNT_ID`, `META_GRAPH_API_VERSION` and the token's expiry. WhatsApp uses its own `META_WHATSAPP_ACCESS_TOKEN` and `META_WHATSAPP_PHONE_NUMBER_ID`. OpenAI and outbound Meta secrets are not required just to verify receipt of a webhook.
 
 For local development, use the ignored `.dev.vars` file based on `.dev.vars.example`. Local values do not automatically become deployed Worker secrets. Secret updates can deploy a new Worker version.
 
@@ -114,9 +114,9 @@ Keep `META_MESSAGING_MODE=observe` (also the default when unset). A verified inc
 
 Our allowlist doesn't disable the existing vendor bot. Arrange a test-user exclusion/pause with that system or use a separate test professional account. Do not disconnect the existing production integration merely to create our app.
 
-Use synthetic test messages/contact details for this milestone: the existing adapter logs message text. Minimize/redact those logs before real customer rollout.
+Use synthetic test messages/contact details for this milestone. The adapter logs metadata, not message text.
 
-Next: implement durable storage/queueing and the outgoing API adapter, wire the tested conversation processor, then prove DM → model → Instagram reply. Calendar integration can initially be replaced with a fake BookingService while Part B is developed.
+Next: configure D1/Queues and secrets, enable the test allowlist, then prove DM → model → Instagram reply. The local tests already cover the full two-prospect booking flow with mocked providers.
 
 ## Information to share with the developer
 

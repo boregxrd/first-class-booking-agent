@@ -46,12 +46,12 @@ Local D1 tests execute actual migrations and queries. Google/OpenAI/Meta remain 
 - Calendar optimistic-concurrency conflicts reload current roster state.
 - Conversation checkpoint, consent, handle, latest-history and processed-turn persistence.
 
-## Remaining boundaries
+## Runtime completion
 
-- Direct owner changes to a shared event can affect everyone. Moved/cancelled managed events are detected during sync and left pending, not silently overwritten. Owner-edit policy and automatic recovery/alerts still need implementation.
-- Notifications recheck D1 status/revision/time, latest matching consent and pending operations before sending. Full send/cancel coordination, Calendar-state checks, lease recovery, bounded retries and out-of-order receipt handling remain.
-- Conversation serialization, a durable outgoing reply outbox and webhook → queue wiring are still pending. Test/live webhook handlers currently invoke processing inline.
-- The Instagram sender still needs the selected Instagram Login API route and separate channel credentials. Public messaging is not ready just by filling in secrets.
-- The Google token cache is still process-wide for a single credential set; credential rotation/multiple-client handling remains a follow-up.
+Durable inbox/queue processing, fenced conversation leases, outgoing outbox, notification lease/retry/receipt handling, shared-slot health checks and alerts are now implemented. Instagram Login uses its own endpoint/token; WhatsApp credentials are separate. The Google token cache is keyed to a credential hash. One-time channel linking, opt-outs, language handling, change/cancel tools and retention are covered by local tests.
+
+Owner edits follow a display-only policy: time/deletion changes pause all slot notifications and raise an alert; roster text is app-maintained. Restoring a valid event clears the alert. Uncertain sends are quarantined for receipt/operator resolution rather than blindly retried. See [OPERATIONS.md](OPERATIONS.md).
+
+Remaining work requires real accounts/credentials, live-provider verification and owner approval of the business policies. No public deployment has been verified.
 
 The concise owner-assigned checklist lives in [ROADMAP.md](../ROADMAP.md).

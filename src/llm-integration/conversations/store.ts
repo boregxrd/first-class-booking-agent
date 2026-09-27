@@ -6,13 +6,13 @@ export interface ConversationState {
   customer: Customer;
   /** Complete text turns only, bounded by the processor. */
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
-  proposal: (TrialProposal & { sourceMessageId: string; expiresAt: string }) | null;
-  bookingOperation: { context: BookingMutationContext; startsAt: string } | null;
+  proposal: (({ action: 'book' } & TrialProposal) | { action: 'reschedule' | 'cancel'; bookingId: string; expectedRevision: number; startsAt: string }) & { sourceMessageId: string; expiresAt: string } | null;
+  bookingOperation: { context: BookingMutationContext; startsAt: string; action: 'book' | 'reschedule' | 'cancel'; bookingId?: string; expectedRevision?: number } | null;
 }
 
 export interface TurnResult {
   reply: string;
-  bookingStatus: 'none' | 'awaiting_confirmation' | 'confirmed' | 'pending' | 'failed';
+  bookingStatus: 'none' | 'awaiting_confirmation' | 'confirmed' | 'cancelled' | 'pending' | 'failed';
   usage: { inputTokens: number; outputTokens: number };
 }
 

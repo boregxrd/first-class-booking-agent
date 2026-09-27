@@ -147,7 +147,7 @@ test('a shared event still sends individual notifications and respects revoked c
     const scheduler = new D1NotificationScheduler(db, { sendTemplate: async (request) => {
       recipients.push(request.to);
       return { status: 'accepted', providerMessageId: `message-${recipients.length}` };
-    } });
+    } }, calendar, { businessAccountId: 'wa-gym', confirmationTemplate: 'confirm', reminderTemplate: 'remind' });
     assert.equal(await scheduler.processDueNotifications(TEST_NOW), 1);
     assert.deepEqual(recipients, ['+12145550101']);
     await db.prepare('UPDATE consents SET revoked_at = ? WHERE customer_id = ?').bind(TEST_NOW, 'phone').run();

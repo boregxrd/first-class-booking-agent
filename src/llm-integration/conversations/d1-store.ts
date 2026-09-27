@@ -1,5 +1,6 @@
 import { ChannelIdentity, Customer, InboundMessage } from '../../../model.js';
 import { ConversationSession, ConversationState, ConversationStore, TurnResult } from './store.js';
+import { identityKey, withLease, type Lease } from '../runtime/persistence.js';
 
 export class D1ConversationStore implements ConversationStore {
   constructor(private db: D1Database) {}
@@ -8,6 +9,10 @@ export class D1ConversationStore implements ConversationStore {
     identity: ChannelIdentity,
     work: (session: ConversationSession) => Promise<T>
   ): Promise<T> {
+    return withLease(this.db, `conversation:${identityKey(identity)}`, (lease) => this.loadSession(identity, work, lease));
+  }
+
+  private async loadSession<T>(identity: ChannelIdentity, work: (session: ConversationSession) => Promise<T>, lease: Lease): Promise<T> {
     const now = new Date().toISOString();
 
     // 1. Get or create Customer & ChannelIdentity
@@ -57,6 +62,7 @@ export class D1ConversationStore implements ConversationStore {
       };
 
       await this.db.batch([
+        lease.fence(),
         this.db
           .prepare(
             `INSERT INTO customers (id, name, whatsapp_phone, language, created_at, updated_at)
@@ -96,13 +102,13 @@ export class D1ConversationStore implements ConversationStore {
       }
     } else {
       conversationId = `conv_${crypto.randomUUID()}`;
-      await this.db
+      await this.db.batch([lease.fence(), this.db
         .prepare(
           `INSERT INTO conversations (id, customer_id, channel, business_account_id, sender_id, revision, updated_at)
            VALUES (?, ?, ?, ?, ?, 1, ?)`
         )
         .bind(conversationId, customerId, identity.channel, identity.businessAccountId, identity.senderId, now)
-        .run();
+      ]);
     }
 
     // 3. Load recent conversation history (last 10 turns)
@@ -159,7 +165,7 @@ export class D1ConversationStore implements ConversationStore {
       if (evidence) statements.push(db.prepare(
         `INSERT INTO consents (id, customer_id, phone, purpose, granted_at, source_channel, source_business_account_id, source_sender_id, source_message_id, revoked_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET revoked_at = excluded.revoked_at`
+         ON CONFLICT(id) DO UPDATE SET revoked_at = COALESCE(consents.revoked_at, excluded.revoked_at)`
       ).bind(`${value.id}:${evidence.sourceMessageId}`, value.customer.id, evidence.phone, evidence.purpose, evidence.grantedAt,
         evidence.sourceIdentity.channel, evidence.sourceIdentity.businessAccountId, evidence.sourceIdentity.senderId, evidence.sourceMessageId, evidence.revokedAt));
       return statements;
@@ -190,7 +196,7 @@ export class D1ConversationStore implements ConversationStore {
 
       async save(updatedState: ConversationState): Promise<void> {
         const timestamp = new Date().toISOString();
-        await db.batch(checkpointStatements(updatedState, timestamp));
+        await db.batch([lease.fence(), ...checkpointStatements(updatedState, timestamp)]);
       },
 
       async complete(message: InboundMessage, finalState: ConversationState, result: TurnResult): Promise<void> {
@@ -199,6 +205,7 @@ export class D1ConversationStore implements ConversationStore {
         const assistantMsgId = `msg_${crypto.randomUUID()}`;
 
         await db.batch([
+          lease.fence(),
           // 1. Inbound user message
           db
             .prepare(
@@ -253,6 +260,13 @@ export class D1ConversationStore implements ConversationStore {
               JSON.stringify(result),
               timestamp
             ),
+          db.prepare(`INSERT INTO outgoing_messages
+            (id, conversation_id, channel, business_account_id, sender_id, source_message_id, text, last_inbound_at, available_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .bind(assistantMsgId, finalState.id, identity.channel, identity.businessAccountId, identity.senderId,
+              message.providerMessageId, result.reply, message.sentAt, timestamp, timestamp, timestamp),
+          db.prepare("UPDATE message_inbox SET state = 'processed' WHERE channel = ? AND business_account_id = ? AND provider_message_id = ?")
+            .bind(identity.channel, identity.businessAccountId, message.providerMessageId),
         ]);
       },
     };

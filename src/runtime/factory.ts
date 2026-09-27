@@ -1,6 +1,6 @@
 import { D1BookingService } from '../bookings/service.js';
 import { GoogleCalendarClient } from '../calendar/client.js';
-import { MetaWhatsAppTemplateSender } from '../channels/outbound.js';
+import { MetaWhatsAppTemplateSender, MetaTextSender } from '../channels/outbound.js';
 import { D1ConversationStore } from '../llm-integration/conversations/d1-store.js';
 import { createAgentProcessor } from '../llm-integration/runtime/create-processor.js';
 import { D1NotificationScheduler, D1NotificationStatusHandler } from '../notifications/scheduler.js';
@@ -19,10 +19,13 @@ export function createServices(env: Env) {
   const bookings = new D1BookingService(env.DB, calendarClient);
   const templateSender = new MetaWhatsAppTemplateSender(env);
   return {
-    calendarClient, store, bookings, templateSender,
+    calendarClient, store, bookings, templateSender, textSender: new MetaTextSender(env),
     // Delivery receipts and cron processing do not need an OpenAI key.
     get processor() { return createAgentProcessor(env, store, bookings); },
-    scheduler: new D1NotificationScheduler(env.DB, templateSender),
+    scheduler: new D1NotificationScheduler(env.DB, templateSender, calendarClient, {
+      businessAccountId: env.META_WHATSAPP_PHONE_NUMBER_ID ?? '',
+      confirmationTemplate: env.WHATSAPP_CONFIRMATION_TEMPLATE ?? '', reminderTemplate: env.WHATSAPP_REMINDER_TEMPLATE ?? '',
+    }),
     statusHandler: new D1NotificationStatusHandler(env.DB),
   };
 }

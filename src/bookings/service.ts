@@ -4,7 +4,8 @@ import {
   type RescheduleTrialInput, type TrialBooking,
 } from '../../model.js';
 import type { RosterCalendar } from '../calendar/client.js';
-import { syncSlotRoster, type ProspectSlotEntry } from '../calendar/slot-roster.js';
+import { syncSlotRoster } from '../calendar/slot-roster.js';
+import { loadSlotProspects } from './roster.js';
 import { AUTHORITATIVE_SCHEDULE, validateBookingSlot } from '../gym/schedule.js';
 
 type Action = 'book' | 'reschedule' | 'cancel';
@@ -34,7 +35,15 @@ export class D1BookingService implements BookingService {
   async getClassSchedule(): Promise<ClassSchedule> { return AUTHORITATIVE_SCHEDULE; }
 
   async getBooking(context: BookingContext, bookingId: string): Promise<TrialBooking | null> {
-    return this.loadBooking(context.customerId, bookingId);
+    const booking = await this.loadBooking(context.customerId, bookingId);
+    const syncing = booking && await this.db.prepare("SELECT operation_key FROM booking_operations WHERE booking_id = ? AND status = 'pending'").bind(bookingId).first();
+    return booking && syncing ? { ...booking, status: 'pending' } : booking;
+  }
+
+  async getCurrentBooking(context: BookingContext): Promise<TrialBooking | null> {
+    const row = await this.db.prepare("SELECT id FROM bookings WHERE customer_id = ? AND status IN ('pending', 'confirmed') ORDER BY created_at DESC LIMIT 1")
+      .bind(context.customerId).first<{ id: string }>();
+    return row ? this.getBooking(context, row.id) : null;
   }
 
   private async loadBooking(customerId: string, bookingId: string): Promise<TrialBooking | null> {
@@ -112,6 +121,9 @@ export class D1BookingService implements BookingService {
       argument_fingerprint: fingerprint, booking_id: bookingId, status: 'pending', result_json: '', affected_slots: JSON.stringify(slots),
     };
     const statements: D1PreparedStatement[] = [];
+    if (existing) statements.push(this.db.prepare(`UPDATE bookings SET revision = CASE
+      WHEN EXISTS (SELECT 1 FROM notification_jobs WHERE booking_id = ? AND state = 'sending') THEN NULL ELSE revision END WHERE id = ?`)
+      .bind(existing.id, existing.id));
     if (action === 'book') {
       statements.push(this.db.prepare(
         `INSERT INTO bookings (id, customer_id, starts_at, ends_at, time_zone, status, revision, calendar_id, created_at, updated_at)
@@ -173,14 +185,7 @@ export class D1BookingService implements BookingService {
            AND status = 'pending' AND lease_token = ? AND lease_expires_at > ?`
         ).bind(new Date(Date.parse(renewedAt) + 10 * 60_000).toISOString(), operation.customer_id, operation.operation_key, token, renewedAt).run();
         if (!renewed.meta.changes) throw new Error('Booking synchronization lease expired');
-        const event = await syncSlotRoster(this.calendar, startsAt, async () => {
-          const rows = await this.db.prepare(
-            `SELECT b.id AS bookingId, c.name, c.whatsapp_phone AS phone, c.instagram_handle AS instagramHandle, c.language
-             FROM bookings b JOIN customers c ON c.id = b.customer_id
-             WHERE b.calendar_id = ? AND b.starts_at = ? AND b.status IN ('pending', 'confirmed') ORDER BY b.id`
-          ).bind(calendarId, startsAt).all<ProspectSlotEntry>();
-          return rows.results;
-        });
+        const event = await syncSlotRoster(this.calendar, startsAt, () => loadSlotProspects(this.db, calendarId, startsAt));
         await this.db.prepare('UPDATE bookings SET event_id = ?, calendar_etag = ? WHERE calendar_id = ? AND starts_at = ?')
           .bind(event.id, event.etag, calendarId, startsAt).run();
       }

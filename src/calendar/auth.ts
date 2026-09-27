@@ -9,7 +9,7 @@ export interface GoogleServiceAccountCredentials {
 }
 
 // In-memory token cache for warm Worker isolates
-let cachedToken: { accessToken: string; expiresAt: number } | null = null;
+let cachedToken: { credentialHash: string; accessToken: string; expiresAt: number } | null = null;
 
 function base64UrlEncode(str: string | Uint8Array): string {
   let base64: string;
@@ -48,16 +48,13 @@ export async function getGoogleCalendarAccessToken(
   credentials: GoogleServiceAccountCredentials
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-
-  // Return cached token if valid for at least 60 more seconds
-  if (cachedToken && cachedToken.expiresAt > now + 60) {
-    return cachedToken.accessToken;
-  }
-
   const { clientEmail, privateKey } = credentials;
   if (!clientEmail || !privateKey) {
     throw new Error('Google Calendar credentials missing: clientEmail or privateKey is undefined.');
   }
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${clientEmail}\0${privateKey}`));
+  const credentialHash = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  if (cachedToken?.credentialHash === credentialHash && cachedToken.expiresAt > now + 60) return cachedToken.accessToken;
 
   const header = {
     alg: 'RS256',
@@ -109,12 +106,15 @@ export async function getGoogleCalendarAccessToken(
   });
 
   if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text();
-    throw new Error(`Google OAuth token exchange failed (${tokenResponse.status}): ${errorText}`);
+    throw new Error(`Google OAuth token exchange failed (${tokenResponse.status})`);
   }
 
   const tokenData = (await tokenResponse.json()) as { access_token: string; expires_in: number };
+  if (typeof tokenData.access_token !== 'string' || !tokenData.access_token || !Number.isFinite(tokenData.expires_in) || tokenData.expires_in <= 0) {
+    throw new Error('Google OAuth returned an invalid token response');
+  }
   cachedToken = {
+    credentialHash,
     accessToken: tokenData.access_token,
     expiresAt: now + (tokenData.expires_in || 3600),
   };

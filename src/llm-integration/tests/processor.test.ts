@@ -50,6 +50,7 @@ function fixture(responses: ModelReply[]) {
   const bookings: BookingService = {
     getClassSchedule: async () => schedule,
     getBooking: async () => null,
+    getCurrentBooking: async () => null,
     bookTrial: async (context, args) => {
       assert.equal(state.customer.name, 'Ana', 'customer checkpoint must precede booking');
       if (state.customer.whatsappPhone) assert.equal(state.customer.whatsappConsent?.sourceMessageId, 'confirmation');

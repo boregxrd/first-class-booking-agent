@@ -147,6 +147,7 @@ export type BookingResult =
  */
 export interface BookingService {
   getClassSchedule(): Promise<ClassSchedule>;
+  getCurrentBooking(context: BookingContext): Promise<TrialBooking | null>;
   getBooking(context: BookingContext, bookingId: string): Promise<TrialBooking | null>;
   bookTrial(context: BookingMutationContext, input: BookTrialInput): Promise<BookingResult>;
   rescheduleTrial(context: BookingMutationContext, input: RescheduleTrialInput): Promise<BookingResult>;
@@ -162,7 +163,7 @@ export interface NotificationJob {
   bookingRevision: number;
   kind: NotificationKind;
   scheduledAt: Instant;
-  state: 'pending' | 'leased' | 'accepted' | 'unknown' | 'failed' | 'cancelled';
+  state: 'pending' | 'leased' | 'sending' | 'accepted' | 'unknown' | 'failed' | 'cancelled';
   attempts: number;
   leaseToken: string | null;
   leaseExpiresAt: Instant | null;
@@ -197,6 +198,7 @@ export interface NotificationDeliveryUpdate {
   status: 'sent' | 'delivered' | 'read' | 'failed';
   occurredAt: Instant;
   errorCode?: string;
+  correlationId?: string;
 }
 
 /** B implements persistence/reconciliation; A routes verified Meta callbacks. */
