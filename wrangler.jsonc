@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "first-class-booking-agent",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "META_VERIFY_TOKEN": "change_this_to_your_custom_verify_token"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
