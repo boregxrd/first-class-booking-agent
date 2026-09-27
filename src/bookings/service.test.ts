@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { BookingMutationContext } from '../../model.js';
 import { D1BookingService } from './service.js';
 import { validateBookingSlot } from '../gym/schedule.js';
+import type { GoogleCalendarClient } from '../calendar/client.js';
 
 test('validateBookingSlot accepts valid Monday morning slot within Dallas hours', () => {
   // 2026-09-28 is a Monday. 08:00 AM Dallas (CDT = UTC-5) is 13:00 UTC
@@ -48,7 +49,7 @@ test('D1BookingService bookTrial enforces idempotency and handles duplicate book
             async first() {
               if (query.includes('FROM booking_operations')) {
                 const key = `${args[0]}_${args[1]}`;
-                if (operations.has(key)) return { result_json: operations.get(key) };
+                if (operations.has(key)) return { result_json: operations.get(key), action: 'book', argument_fingerprint: JSON.stringify({ startsAt: '2026-09-28T13:00:00.000Z' }) };
                 return null;
               }
               if (query.includes('FROM bookings')) {
@@ -78,7 +79,11 @@ test('D1BookingService bookTrial enforces idempotency and handles duplicate book
     },
   };
 
-  const bookingService = new D1BookingService(mockDb, null);
+  const calendar = {
+    configuredCalendarId: 'test-calendar',
+    createTrialEvent: async () => ({ id: 'event', etag: 'etag' }),
+  } as unknown as GoogleCalendarClient;
+  const bookingService = new D1BookingService(mockDb, calendar);
 
   const context: BookingMutationContext = {
     customerId: 'cust_123',

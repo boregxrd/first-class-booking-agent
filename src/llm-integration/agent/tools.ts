@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ClassSchedule } from '../../../model.js';
 import type { ModelTool } from './client.js';
+import { validateBookingSlot } from '../../gym/schedule.js';
 
 export const proposalSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -42,19 +43,5 @@ export const agentTools: ModelTool[] = [
 
 /** The booking owner validates again; this prevents invalid confirmation proposals. */
 export function isScheduledTime(startsAt: string, schedule: ClassSchedule, now: string): boolean {
-  const timestamp = Date.parse(startsAt);
-  const lead = timestamp - Date.parse(now);
-  if (!Number.isFinite(lead) || lead <= 0 || lead < schedule.minimumLeadMinutes * 60_000
-    || lead > schedule.bookingHorizonDays * 86_400_000) return false;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: schedule.timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
-    weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date(timestamp));
-  const get = (type: string) => parts.find((part) => part.type === type)?.value;
-  if (get('second') !== '00' || timestamp % 1000 !== 0) return false;
-  const date = `${get('year')}-${get('month')}-${get('day')}`;
-  const time = `${get('hour')}:${get('minute')}`;
-  const weekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(get('weekday') ?? '') + 1;
-  const override = schedule.dateOverrides.find((item) => item.date === date);
-  return (override?.startTimes ?? schedule.weekly.find((item) => item.weekday === weekday)?.startTimes ?? []).includes(time);
+  return validateBookingSlot(startsAt, now, schedule).valid;
 }

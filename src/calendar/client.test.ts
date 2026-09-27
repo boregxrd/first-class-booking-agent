@@ -73,10 +73,14 @@ test('addProspectToSlotRoster creates new event if not existing, and appends if 
       return new Response(JSON.stringify({ items: Array.from(eventsDb.values()) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (method === 'PUT' || method === 'PATCH') {
+    if (method === 'POST' || method === 'PATCH') {
       const body = JSON.parse(init.body);
       const targetId = eventId || body.id || 'event_1';
       const existing = eventsDb.get(targetId);
+      if (method === 'POST') {
+        assert.equal(eventId, null, 'insertion uses the events collection endpoint');
+        if (existing) return new Response('Conflict', { status: 409 });
+      } else if (!existing) return new Response('Not Found', { status: 404 });
 
       const savedEvent: GoogleCalendarEvent = {
         id: targetId,
@@ -92,7 +96,7 @@ test('addProspectToSlotRoster creates new event if not existing, and appends if 
       return new Response(JSON.stringify(savedEvent), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    return new Response('OK', { status: 200 });
+    return new Response('Unsupported method', { status: 405 });
   };
 
   try {
@@ -134,6 +138,14 @@ test('addProspectToSlotRoster creates new event if not existing, and appends if 
     assert.match(result2.event.description || '', /Ana/);
     assert.match(result2.event.description || '', /Sofía/);
     assert.match(result2.event.description || '', /@sofia.fit/);
+
+    const booking = { bookingId: 'retry-test', customerName: 'Test', startsAt: slotTime, endsAt: calculateOneHourEndTime(slotTime) };
+    const inserted = await client.createTrialEvent(booking);
+    const count = eventsDb.size;
+    const replayed = await client.createTrialEvent(booking);
+    assert.equal(replayed.id, inserted.id);
+    assert.equal(eventsDb.size, count, 'a retry reconciles HTTP 409 instead of creating another event');
+    await assert.rejects(client.createTrialEvent({ ...booking, startsAt: '2026-09-28T09:00:00Z' }), /409/);
   } finally {
     globalThis.fetch = originalFetch;
   }

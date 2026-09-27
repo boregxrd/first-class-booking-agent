@@ -5,6 +5,9 @@ export interface Env {
   // Environment Variables & Secrets
   META_VERIFY_TOKEN: string;
   META_APP_SECRET: string;
+  META_MESSAGING_MODE?: 'observe' | 'test' | 'live';
+  META_TEST_INSTAGRAM_SENDER_IDS?: string;
+  META_TEST_WHATSAPP_SENDER_IDS?: string;
 
   // (Optional future bindings)
   META_ACCESS_TOKEN?: string;

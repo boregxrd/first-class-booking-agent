@@ -68,15 +68,22 @@ export class D1BookingService implements BookingService {
     // 1. Check idempotency: Return existing result if operation key already processed
     const existingOp = await this.db
       .prepare(
-        `SELECT result_json
+        `SELECT result_json, argument_fingerprint, action
          FROM booking_operations
          WHERE customer_id = ? AND operation_key = ?`
       )
       .bind(context.customerId, context.operationKey)
-      .first<{ result_json: string }>();
+      .first<{ result_json: string; argument_fingerprint: string; action: string }>();
 
     if (existingOp?.result_json) {
+      if (existingOp.action !== 'book' || existingOp.argument_fingerprint !== JSON.stringify(input)) {
+        return { status: 'failed', code: 'idempotency_conflict', message: 'Operation key was used for a different request.', retryable: false };
+      }
       return JSON.parse(existingOp.result_json) as BookingResult;
+    }
+
+    if (!this.calendarClient) {
+      return { status: 'failed', code: 'dependency_unavailable', message: 'Google Calendar is not configured.', retryable: true };
     }
 
     // 2. Validate schedule time slot
@@ -116,7 +123,10 @@ export class D1BookingService implements BookingService {
       .first<{ name: string | null; whatsapp_phone: string | null; language: 'es' | 'en' }>();
 
     const bookingId = `trial_${crypto.randomUUID()}`;
-    const customerName = customer?.name || 'Prospect';
+    if (!customer?.name?.trim() || !customer.whatsapp_phone?.match(/^\+[1-9]\d{7,14}$/)) {
+      return { status: 'failed', code: 'missing_customer_details', message: 'Name and international phone number are required.', retryable: false };
+    }
+    const customerName = customer.name;
 
     // 5. Create Google Calendar Event
     let calendarEventId: string | null = null;
@@ -153,7 +163,7 @@ export class D1BookingService implements BookingService {
       timeZone: GYM_TIME_ZONE,
       status: 'confirmed',
       revision: 1,
-      calendar: calendarEventId ? { calendarId: 'primary', eventId: calendarEventId, etag: calendarEtag } : null,
+      calendar: calendarEventId ? { calendarId: this.calendarClient.configuredCalendarId, eventId: calendarEventId, etag: calendarEtag } : null,
       createdAt: now,
       updatedAt: now,
     };
@@ -227,6 +237,9 @@ export class D1BookingService implements BookingService {
     if (existing.revision !== input.expectedRevision) {
       return { status: 'failed', code: 'revision_conflict', message: 'Booking was modified elsewhere.', retryable: false };
     }
+    if (existing.status !== 'confirmed' || !this.calendarClient || !existing.calendar) {
+      return { status: 'failed', code: 'dependency_unavailable', message: 'A synchronized active booking is required.', retryable: false };
+    }
 
     const validation = validateBookingSlot(input.startsAt, now);
     if (!validation.valid || !validation.startsAtUtc || !validation.endsAtUtc) {
@@ -296,11 +309,19 @@ export class D1BookingService implements BookingService {
       return { status: 'failed', code: 'not_found', message: 'Booking not found.', retryable: false };
     }
 
+    if (existing.revision !== input.expectedRevision) {
+      return { status: 'failed', code: 'revision_conflict', message: 'Booking was modified elsewhere.', retryable: false };
+    }
+    if (!this.calendarClient || !existing.calendar) {
+      return { status: 'failed', code: 'dependency_unavailable', message: 'Google Calendar is not configured for this booking.', retryable: true };
+    }
+
     if (this.calendarClient && existing.calendar?.eventId) {
       try {
         await this.calendarClient.deleteTrialEvent(existing.calendar.eventId);
       } catch (err) {
         console.error('[BookingService] Failed to delete calendar event:', err);
+        return { status: 'failed', code: 'dependency_unavailable', message: 'Calendar cancellation failed; booking remains active.', retryable: true };
       }
     }
 

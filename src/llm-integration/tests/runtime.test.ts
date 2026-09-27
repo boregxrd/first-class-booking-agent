@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from '../../index.js';
 import { createQueueHandler, handleQueue } from '../runtime/queue.js';
+import { canProcessMessages } from '../runtime/test-access.js';
 
 test('thin entrypoint preserves the Meta challenge endpoint', async () => {
   const response = await worker.fetch(
@@ -11,6 +12,16 @@ test('thin entrypoint preserves the Meta challenge endpoint', async () => {
   );
   assert.equal(response.status, 200);
   assert.equal(await response.text(), 'challenge-123');
+});
+
+test('messaging defaults to observation and test mode allows exact sender IDs only', () => {
+  const env = { META_APP_SECRET: 'test', META_VERIFY_TOKEN: 'test' };
+  const identity = { channel: 'instagram' as const, businessAccountId: 'gym', senderId: '1234' };
+  assert.equal(canProcessMessages(identity, env), false);
+  assert.equal(canProcessMessages(identity, { ...env, META_MESSAGING_MODE: 'test' }), false);
+  assert.equal(canProcessMessages(identity, { ...env, META_MESSAGING_MODE: 'test', META_TEST_INSTAGRAM_SENDER_IDS: '123' }), false);
+  assert.equal(canProcessMessages(identity, { ...env, META_MESSAGING_MODE: 'test', META_TEST_INSTAGRAM_SENDER_IDS: '1234, 5678' }), true);
+  assert.equal(canProcessMessages({ ...identity, channel: 'whatsapp' }, { ...env, META_MESSAGING_MODE: 'test', META_TEST_INSTAGRAM_SENDER_IDS: '1234' }), false);
 });
 
 test('unconfigured queue cannot silently acknowledge messages', async () => {

@@ -30,13 +30,16 @@ export function validateBookingSlot(
   const requestedDate = new Date(startsAtInstant);
   const nowDate = new Date(nowInstant);
 
-  if (isNaN(requestedDate.getTime())) {
+  if (!Number.isFinite(requestedDate.getTime()) || !Number.isFinite(nowDate.getTime())) {
     return { valid: false, reason: 'Invalid date timestamp format.' };
+  }
+  if (requestedDate.getUTCSeconds() !== 0 || requestedDate.getUTCMilliseconds() !== 0) {
+    return { valid: false, reason: 'Class times must start on the exact scheduled minute.' };
   }
 
   // 1. Lead time check (minimum 60 minutes in advance)
   const minLeadMs = schedule.minimumLeadMinutes * 60 * 1000;
-  if (requestedDate.getTime() < nowDate.getTime() + minLeadMs) {
+  if (requestedDate.getTime() <= nowDate.getTime() || requestedDate.getTime() < nowDate.getTime() + minLeadMs) {
     return { valid: false, reason: 'Cannot book past classes or classes starting in less than 1 hour.' };
   }
 

@@ -1,6 +1,6 @@
 # Messaging and agent integration (Part A)
 
-`src/index.ts` remains the Worker entrypoint. New Part A application code lives here.
+`src/index.ts` remains the Worker entrypoint. New Part A application code lives here. For the latest integrated status and remaining defects, see [ROADMAP.md](../../ROADMAP.md) and [docs/REVIEW.md](../../docs/REVIEW.md).
 
 ## Gym context
 
@@ -16,7 +16,7 @@
 - `agent/client.ts`: Workers-native OpenAI Chat Completions client, default `gpt-4.1-mini`, configurable via `OPENAI_MODEL`. Includes a 20-second timeout, runtime response validation, usage counts and a 600-token output cap. Request failures propagate to the caller; no hidden retries.
 - `agent/tools.ts`: strict tool argument validation and Dallas schedule checks. The model can read the schedule or **propose** a trial; it cannot directly create a booking.
 - `conversations/processor.ts`: up to four model rounds per turn, latest 20 text messages, persisted proposal/operation checkpoints and deterministic booking confirmation replies.
-- `conversations/store.ts`: required durable store interface. Its production implementation is still pending. The in-memory implementation in tests is only a test fixture.
+- `conversations/store.ts`: required durable store interface. `d1-store.ts` now implements persistence, but serialization and outbound outbox are still pending. In-memory test fixtures are never used as a runtime fallback.
 - `runtime/create-processor.ts`: constructs the real model client and processor from Worker environment, a conversation store and Part B's BookingService.
 - `runtime/queue.ts`: validates normalized messages, acknowledges successful durable processing and requests retries after failures. The default exported handler deliberately fails until adapters are configured.
 - `webhooks/routes.ts`: HTTP plumbing for the existing Meta adapter. `src/index.ts` mounts these routes and delegates queue handling.
@@ -31,13 +31,13 @@ The durable checkpoint saves the customer/consent and stable booking-operation k
 
 ### Remaining live wiring
 
-This is a tested processor core, **not yet an end-to-end DM bot**. Meta handlers still log incoming events. Next implement:
+This is a tested processor core, **not yet a reliable end-to-end DM bot**. In default observe mode, Meta handlers log metadata only. Test/live modes currently invoke the processor inline; this must be replaced with durable ingestion. Remaining integration work:
 
-1. D1 conversation/customer/processed-message storage, serialization and outbound outbox.
+1. Finish D1 conversation serialization and outbound outbox (base storage now exists).
 2. Webhook normalization + durable queue publication before HTTP acknowledgement.
 3. Queue bindings/retry limits/dead-letter queue in Wrangler.
-4. Inject the real store and BookingService into `createAgentProcessor`, then `createQueueHandler`.
-5. Outbound Instagram/WhatsApp dispatch and delivery tracking; deferred booking-operation reconciliation.
+4. Connect the composed services in `src/runtime/factory.ts` to `createQueueHandler`.
+5. Correct the outbound Instagram Login adapter and add reliable dispatch/delivery tracking; deferred booking-operation reconciliation.
 6. Change/cancel tools, identity linking and consent withdrawal handling before production rollout.
 
 Store `OPENAI_API_KEY` as a Worker secret; use `.dev.vars` locally. Workers host the HTTP API/processor. D1 stores application state. Queues hand off webhook work. Google Calendar remains Part B's integration. Tests use mocked provider requests and a test-only store; no live model or Meta calls are made.

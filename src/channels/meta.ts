@@ -13,6 +13,7 @@ import {
   WhatsAppWebhookPayload,
 } from '../types/meta.js';
 import { sendInstagramReply, sendWhatsAppText } from './outbound.js';
+import { canProcessMessages } from '../llm-integration/runtime/test-access.js';
 
 // ============================================================================
 // SIGNATURE & AUTHENTICATION HELPERS
@@ -111,6 +112,10 @@ export async function handleInstagramMessage(
     text: messageText,
   };
 
+  if (!canProcessMessages(inbound.identity, env)) {
+    console.log('[Instagram] Observe-only inbound', { businessAccountId: recipientId, senderId, messageId });
+    return;
+  }
   const services = createServices(env);
 
   try {
@@ -152,6 +157,10 @@ export async function handleWhatsAppMessage(
     text: message.text.body,
   };
 
+  if (!canProcessMessages(inbound.identity, env)) {
+    console.log('[WhatsApp] Observe-only inbound', { businessAccountId: metadata.phone_number_id, senderId: message.from, messageId: message.id });
+    return;
+  }
   const services = createServices(env);
 
   try {

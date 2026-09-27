@@ -70,9 +70,11 @@ export interface GoogleCalendarEvent {
 
 export class GoogleCalendarClient {
   private calendarId: string;
+  readonly configuredCalendarId: string;
   private credentials: GoogleServiceAccountCredentials;
 
   constructor(config: GoogleCalendarConfig) {
+    this.configuredCalendarId = config.calendarId;
     this.calendarId = encodeURIComponent(config.calendarId);
     this.credentials = {
       clientEmail: config.clientEmail,
@@ -105,8 +107,7 @@ export class GoogleCalendarClient {
   }
 
   /**
-   * Creates or idempotently upserts a prospect's trial event on Google Calendar.
-   * Uses PUT with a deterministic eventId so retrying on timeout does not duplicate events.
+   * Inserts an event with a client-supplied deterministic ID; reconciles retry conflicts.
    */
   async createTrialEvent(input: CreateTrialEventInput): Promise<GoogleCalendarEvent> {
     const eventId = await deriveCalendarEventId(input.bookingId);
@@ -136,11 +137,18 @@ export class GoogleCalendarClient {
       status: 'confirmed',
     };
 
-    // Use import/upsert via PUT to guarantee idempotency across network retries
-    return this.request<GoogleCalendarEvent>(`/events/${eventId}`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
+    try {
+      return await this.request<GoogleCalendarEvent>('/events', {
+        method: 'POST', body: JSON.stringify(body),
+      });
+    } catch (error) {
+      if ((error as { status?: number }).status !== 409) throw error;
+      const existing = await this.getTrialEvent(eventId);
+      if (!existing || existing.status !== 'confirmed'
+        || Date.parse(existing.start.dateTime) !== Date.parse(input.startsAt)
+        || Date.parse(existing.end.dateTime) !== Date.parse(input.endsAt)) throw error;
+      return existing;
+    }
   }
 
   /**

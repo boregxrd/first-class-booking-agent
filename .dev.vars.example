@@ -10,6 +10,13 @@ META_APP_SECRET=your_meta_app_secret_here
 # (Optional) Future bindings
 # META_ACCESS_TOKEN=your_system_user_token
 # META_PHONE_NUMBER_ID=your_phone_number_id
+
+# Receive/log metadata without replying by default while the existing bot is active.
+META_MESSAGING_MODE=observe
+# Once the test sender's scoped ID is visible in verified webhook logs:
+# META_MESSAGING_MODE=test
+# META_TEST_INSTAGRAM_SENDER_IDS=your_instagram_scoped_sender_id
+# META_TEST_WHATSAPP_SENDER_IDS=your_whatsapp_sender_id
 # OPENAI_API_KEY=your_openai_api_key
 
 # Google Calendar API (Service Account)
