@@ -10,9 +10,29 @@ Follow the **final** decisions in `context.md:468–536`; earlier capacity/Airta
 - Keep durable application state in D1 (proposed): conversations, identity, booking/event mapping, webhook deduplication, and notification jobs.
 - Gymdesk remains separate. The bot cannot infer membership purchases or actual attendance.
 - Target less than $100/month at fewer than 500 prospects; measure tokens/messages and verify vendor pricing before launch.
-- Proposed deployment: Cloudflare Workers + D1 + Queues + a scheduled handler. The current app is Node/Hono, so this is still migration work.
+- Deployment direction: Cloudflare Workers + D1 + Queues + a scheduled handler. The entrypoint now runs on Workers; D1/queue bindings and actual consumers/scheduled processing still need implementation.
 
-## Current audit
+## Latest progress (after pulling `d48ea0f`)
+
+- [x] Friend migrated the entrypoint to `src/index.ts` on Workers and added Wrangler configuration.
+- [x] Friend extracted Meta handlers to `src/channels/meta.ts` and wire types to `src/types/meta.ts`.
+- [x] Friend added missing verify-token guards, mandatory signature checking, Instagram echo filtering and WhatsApp sender/contact matching.
+- [x] Add approved gym facts, FAQs, explicitly unknown details and warm Spanish voice preferences in `src/llm-integration/gym-context.ts`.
+- [x] Add provider-independent system prompt builder in `src/llm-integration/agent/prompt.ts`, with booking success rules and illustrative tone examples.
+- [x] Connect the prompt to a provider-independent conversation processor and implement the configurable OpenAI model client (default GPT-4.1 mini).
+- [x] Add strict proposal validation, explicit customer confirmation, consent/operation checkpoints, bounded model rounds, token accounting and test coverage.
+- [x] Record owner-confirmed 60-minute class duration.
+- [ ] Implement the durable ConversationStore adapter and outbound outbox, then wire the processor to Meta ingestion and Part B's BookingService.
+
+All new Part A application code belongs in `src/llm-integration/`; keep `src/index.ts` as the thin Worker entrypoint. The existing `src/channels/meta.ts` remains the inbound adapter from the friend's change.
+
+The scheduled handler is still a stub owned by Part B. The default queue handler now throws rather than discarding messages; a queue-handler factory is implemented but requires a durable processor/store/outbox before connection. Wrangler has no D1, queue or cron configuration yet. Structural Meta payload validation and durable ingestion are still missing.
+
+Validation after pulling and adding gym context: `npm ci` and `npm run typecheck` passed. This does not validate live deployment or actual model behavior.
+
+Model/processor validation: `npm run typecheck` and all 14 tests passed, covering model request/response handling, FAQ-only turns, explicit confirmation, deduplication, invalid tool arguments, timeout recovery, persistence failures, Dallas/DST schedule checks, webhook route preservation and queue acknowledgement/retry behavior. Provider and booking calls are mocked; production store and outbound integration remain pending.
+
+## Original audit (before the Workers migration)
 
 Checked against `index.ts`, `package.json`, `tsconfig.json`, and `.env.example`. A checked box below means code exists, **not** that an external integration is deployed or verified live.
 
@@ -91,7 +111,7 @@ The schedule can start as version-controlled configuration rather than a class/s
 
 ## Part A — Messaging, conversation agent, and runtime (Person 1)
 
-**Owns:** `index.ts`, future `src/channels/`, `src/agent/`, `src/conversations/`, runtime configuration and conversation storage.
+**Owns:** `src/index.ts` wiring, existing `src/channels/` adapter, new `src/llm-integration/` application code, runtime configuration and conversation storage.
 
 ### A1. Inbound messaging and infrastructure
 
@@ -99,7 +119,7 @@ The schedule can start as version-controlled configuration rather than a class/s
 - [x] Implement health endpoint and Meta verification challenge handler.
 - [x] Route Instagram and WhatsApp messages/statuses to handlers.
 - [x] Add basic signature verification and environment examples.
-- [ ] Split app construction from server startup so handlers can be tested without opening a port.
+- [x] Replace Node server startup with an exported Worker handler so imports do not open a port.
 - [ ] Migrate entrypoint/environment access to Workers; configure D1, queue producer/consumer, retry/dead-letter handling, and scheduled entrypoint for B.
 - [ ] Require real production secrets/verify token; make any local bypass explicit. Use a suitable signature verification primitive and validate incoming JSON at runtime.
 - [ ] Normalize supported text messages into the shared inbound model; filter echoes, own-account messages, receipts and unsupported event types. Match WhatsApp contacts by sender.
@@ -112,7 +132,8 @@ The schedule can start as version-controlled configuration rather than a class/s
 - [ ] Choose a tool-calling provider/model; add credentials, request timeout, bounded retries, usage measurement, and turn/tool-call limits.
 - [ ] Persist customer/channel identity, conversation state and recent history. Keep phone consent evidence tied to the inbound message that granted it.
 - [ ] Define safe cross-channel identity linking: an Instagram-entered phone number alone must not authorize access to another person's existing booking.
-- [ ] Supply approved gym facts, current time and `America/Chicago` timezone to the prompt. Use natural Spanish/English replies, collect required details, and confirm the customer's booking intent.
+- [x] Define approved gym facts and a prompt builder accepting current time and the authoritative schedule, with `America/Chicago` timezone and warm Spanish/English guidance.
+- [ ] Wire the prompt builder into real model requests and verify the voice, detail collection and booking-intent handling in multi-turn conversations.
 - [ ] Implement runtime-validated tools using BookingService; inject trusted customer identity, consent and stable operation keys from application state.
 - [ ] Implement the await-model → execute-tools → await-model loop; only claim booking success after B returns success.
 - [ ] Implement Instagram replies and WhatsApp in-window text replies using the configured Meta API route/version and appropriate credentials.
@@ -179,7 +200,7 @@ The schedule can start as version-controlled configuration rather than a class/s
 3. Wire WhatsApp confirmation/reminders and change/cancel flows.
 4. Exercise retries and owner Calendar edits, then run the live acceptance flow together.
 
-Owner inputs still needed: actual class duration, confirmed weekly times/closures, FAQ/prices/what-to-bring, eligibility/rebooking rules, reminder timing and minimum booking lead time. Developer choices: model/provider, Calendar auth method, supported languages, and cross-channel verification/linking flow.
+Owner confirmed class duration: 60 minutes. Inputs still needed: confirmed weekly times/closures, FAQ/prices/what-to-bring, eligibility/rebooking rules, reminder timing and minimum booking lead time. Initial model: OpenAI GPT-4.1 mini (configurable). Remaining developer choices: Calendar auth method, supported languages, and cross-channel verification/linking flow.
 
 ## Validation log
 

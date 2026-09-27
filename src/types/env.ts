@@ -10,6 +10,7 @@ export interface Env {
   META_ACCESS_TOKEN?: string;
   META_PHONE_NUMBER_ID?: string;
   OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
 
   // Cloudflare D1 Database Binding
   DB?: D1Database;
