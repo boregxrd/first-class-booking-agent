@@ -45,6 +45,7 @@ export interface Customer {
   id: string;
   name: string | null;
   whatsappPhone: E164Phone | null;
+  instagramHandle?: string | null;
   language: Language;
   whatsappConsent: ConsentEvidence | null;
   createdAt: Instant;
@@ -84,6 +85,7 @@ export interface TrialBooking {
   /** Time passing does not prove attendance or membership conversion. */
   status: 'pending' | 'confirmed' | 'cancelled' | 'elapsed' | 'failed';
   revision: number;
+  /** Shared hourly roster event; never delete/move it to change a single booking. */
   calendar: { calendarId: string; eventId: string; etag: string | null } | null;
   createdAt: Instant;
   updatedAt: Instant;

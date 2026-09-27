@@ -29,6 +29,7 @@ export class D1NotificationScheduler {
          JOIN bookings b ON j.booking_id = b.id
          JOIN customers c ON b.customer_id = c.id
          WHERE j.state = 'pending' AND j.scheduled_at <= ?
+         AND NOT EXISTS (SELECT 1 FROM booking_operations op WHERE op.booking_id = b.id AND op.status = 'pending')
          LIMIT 20`
       )
       .bind(nowInstant)
@@ -64,8 +65,18 @@ export class D1NotificationScheduler {
 
       if (!leaseResult.meta.changes) continue;
 
-      // Skip if booking was cancelled/elapsed or customer has no WhatsApp phone
-      if (job.booking_status !== 'confirmed' || !job.whatsapp_phone) {
+      // Jobs belong to individual bookings. A shared roster update must never
+      // notify all people in that slot or send while this booking is unsynchronized.
+      const eligible = job.whatsapp_phone && await this.db.prepare(
+        `SELECT b.id FROM bookings b JOIN customers c ON c.id = b.customer_id
+         WHERE b.id = ? AND b.status = 'confirmed' AND b.revision = ? AND b.starts_at = ? AND b.starts_at > ?
+         AND c.whatsapp_phone = ?
+         AND NOT EXISTS (SELECT 1 FROM booking_operations op WHERE op.booking_id = b.id AND op.status = 'pending')
+         AND EXISTS (SELECT 1 FROM consents co WHERE co.customer_id = c.id AND co.phone = c.whatsapp_phone
+           AND co.purpose = 'trial_confirmation_and_reminders' AND co.revoked_at IS NULL
+           AND co.id = (SELECT id FROM consents WHERE customer_id = c.id ORDER BY granted_at DESC, rowid DESC LIMIT 1))`
+      ).bind(job.booking_id, job.booking_revision, job.starts_at, nowInstant, job.whatsapp_phone).first();
+      if (!eligible) {
         await this.db
           .prepare(`UPDATE notification_jobs SET state = 'cancelled', updated_at = ? WHERE id = ?`)
           .bind(nowInstant, job.id)
@@ -75,13 +86,14 @@ export class D1NotificationScheduler {
 
       // Format date and time in America/Chicago
       const startDate = new Date(job.starts_at);
-      const dateFormatter = new Intl.DateTimeFormat('es-US', {
+      const locale = job.language === 'en' ? 'en-US' : 'es-US';
+      const dateFormatter = new Intl.DateTimeFormat(locale, {
         timeZone: GYM_TIME_ZONE,
         weekday: 'long',
         month: 'long',
         day: 'numeric',
       });
-      const timeFormatter = new Intl.DateTimeFormat('es-US', {
+      const timeFormatter = new Intl.DateTimeFormat(locale, {
         timeZone: GYM_TIME_ZONE,
         hour: 'numeric',
         minute: '2-digit',
@@ -95,7 +107,7 @@ export class D1NotificationScheduler {
       const templateName = job.kind === 'confirmation' ? 'trial_booking_confirmation' : 'trial_class_reminder';
       const templateReq: WhatsAppTemplateRequest = {
         notificationJobId: job.id,
-        to: job.whatsapp_phone,
+        to: job.whatsapp_phone!,
         templateName,
         languageCode: job.language === 'en' ? 'en_US' : 'es',
         bodyParameters: [customerName, formattedDate, formattedTime],

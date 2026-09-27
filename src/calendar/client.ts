@@ -1,61 +1,7 @@
-import { GYM_TIME_ZONE, Instant, Language } from '../../model.js';
-import { getGoogleCalendarAccessToken, GoogleServiceAccountCredentials } from './auth.js';
+import type { Instant } from '../../model.js';
+import { getGoogleCalendarAccessToken, type GoogleServiceAccountCredentials } from './auth.js';
 
-// Base32hex alphabet (0-9, a-v) compliant with Google Calendar Event ID specification
-const BASE32HEX_ALPHABET = '0123456789abcdefghijklmnopqrstuv';
-
-/**
- * Derives a deterministic, RFC 4648 Base32Hex Google Calendar Event ID from a booking ID.
- * Ensures that retried requests never create duplicate calendar events.
- */
-export async function deriveCalendarEventId(bookingId: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(`dwc_trial_${bookingId}`);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-
-  // Convert first 20 bytes of SHA-256 hash to base32hex (32 characters)
-  let bits = 0;
-  let value = 0;
-  let output = 'd'; // prefix 'd' is in [a-v]
-
-  for (let i = 0; i < 20; i++) {
-    value = (value << 8) | hashArray[i];
-    bits += 8;
-    while (bits >= 5) {
-      output += BASE32HEX_ALPHABET[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-
-  if (bits > 0) {
-    output += BASE32HEX_ALPHABET[(value << (5 - bits)) & 31];
-  }
-
-  return output;
-}
-
-export interface GoogleCalendarConfig extends GoogleServiceAccountCredentials {
-  calendarId: string;
-}
-
-export interface CreateTrialEventInput {
-  bookingId: string;
-  customerName: string;
-  whatsappPhone?: string | null;
-  instagramHandle?: string | null;
-  language?: Language;
-  startsAt: Instant;
-  endsAt: Instant;
-  address?: string;
-}
-
-export interface UpdateTrialEventInput {
-  startsAt: Instant;
-  endsAt: Instant;
-  summary?: string;
-  description?: string;
-}
+export interface GoogleCalendarConfig extends GoogleServiceAccountCredentials { calendarId: string }
 
 export interface GoogleCalendarEvent {
   id: string;
@@ -63,173 +9,58 @@ export interface GoogleCalendarEvent {
   status: 'confirmed' | 'tentative' | 'cancelled';
   summary: string;
   description?: string;
-  start: { dateTime: string; timeZone?: string };
-  end: { dateTime: string; timeZone?: string };
-  updated: string;
+  start: { dateTime: Instant; timeZone?: string };
+  end: { dateTime: Instant; timeZone?: string };
+  extendedProperties?: { private?: Record<string, string> };
 }
 
-export class GoogleCalendarClient {
-  private calendarId: string;
-  readonly configuredCalendarId: string;
-  private credentials: GoogleServiceAccountCredentials;
+export type RosterEventBody = Omit<GoogleCalendarEvent, 'etag'> & { location: string };
 
-  constructor(config: GoogleCalendarConfig) {
+/** Narrow transport contract: roster creation/replacement, never per-person event deletion. */
+export interface RosterCalendar {
+  readonly configuredCalendarId: string;
+  getEvent(eventId: string): Promise<GoogleCalendarEvent | null>;
+  insertEvent(body: RosterEventBody): Promise<GoogleCalendarEvent>;
+  replaceRoster(body: RosterEventBody, etag: string): Promise<GoogleCalendarEvent>;
+}
+
+export class CalendarApiError extends Error {
+  constructor(readonly status: number) { super(`Google Calendar request failed (HTTP ${status})`); }
+}
+
+export class GoogleCalendarClient implements RosterCalendar {
+  readonly configuredCalendarId: string;
+  constructor(private readonly config: GoogleCalendarConfig) {
     this.configuredCalendarId = config.calendarId;
-    this.calendarId = encodeURIComponent(config.calendarId);
-    this.credentials = {
-      clientEmail: config.clientEmail,
-      privateKey: config.privateKey,
-    };
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const accessToken = await getGoogleCalendarAccessToken(this.credentials);
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${this.calendarId}${path}`;
-
-    const headers = new Headers(options.headers || {});
-    headers.set('Authorization', `Bearer ${accessToken}`);
+    const token = await getGoogleCalendarAccessToken(this.config);
+    const headers = new Headers(options.headers);
+    headers.set('Authorization', `Bearer ${token}`);
     headers.set('Content-Type', 'application/json');
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(this.config.calendarId)}${path}`, {
+      ...options, headers, signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) throw new CalendarApiError(response.status);
+    return await response.json() as T;
+  }
 
-    const response = await fetch(url, { ...options, headers });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      const error = new Error(`Google Calendar API error (${response.status} ${path}): ${errorBody}`);
-      (error as any).status = response.status;
+  async getEvent(eventId: string): Promise<GoogleCalendarEvent | null> {
+    try { return await this.request<GoogleCalendarEvent>(`/events/${encodeURIComponent(eventId)}`); }
+    catch (error) {
+      if (error instanceof CalendarApiError && error.status === 404) return null;
       throw error;
     }
-
-    if (response.status === 204) {
-      return null as T;
-    }
-
-    return (await response.json()) as T;
   }
 
-  /**
-   * Inserts an event with a client-supplied deterministic ID; reconciles retry conflicts.
-   */
-  async createTrialEvent(input: CreateTrialEventInput): Promise<GoogleCalendarEvent> {
-    const eventId = await deriveCalendarEventId(input.bookingId);
-    const address = input.address || '2640 Old Denton Rd, Carrollton, TX 75007';
-
-    const description = [
-      `Name: ${input.customerName}`,
-      `WhatsApp: ${input.whatsappPhone || 'N/A'}`,
-      `Instagram: ${input.instagramHandle || 'N/A'}`,
-      `Language: ${input.language || 'es'}`,
-      `Booking ID: ${input.bookingId}`,
-    ].join('\n');
-
-    const body = {
-      id: eventId,
-      summary: `Free trial — ${input.customerName}`,
-      description,
-      location: address,
-      start: {
-        dateTime: input.startsAt,
-        timeZone: GYM_TIME_ZONE,
-      },
-      end: {
-        dateTime: input.endsAt,
-        timeZone: GYM_TIME_ZONE,
-      },
-      status: 'confirmed',
-    };
-
-    try {
-      return await this.request<GoogleCalendarEvent>('/events', {
-        method: 'POST', body: JSON.stringify(body),
-      });
-    } catch (error) {
-      if ((error as { status?: number }).status !== 409) throw error;
-      const existing = await this.getTrialEvent(eventId);
-      if (!existing || existing.status !== 'confirmed'
-        || Date.parse(existing.start.dateTime) !== Date.parse(input.startsAt)
-        || Date.parse(existing.end.dateTime) !== Date.parse(input.endsAt)) throw error;
-      return existing;
-    }
+  insertEvent(body: RosterEventBody): Promise<GoogleCalendarEvent> {
+    return this.request('/events', { method: 'POST', body: JSON.stringify(body) });
   }
 
-  /**
-   * Reschedules an existing Google Calendar trial event.
-   */
-  async updateTrialEvent(
-    eventId: string,
-    input: UpdateTrialEventInput
-  ): Promise<GoogleCalendarEvent> {
-    const body: Record<string, unknown> = {
-      start: {
-        dateTime: input.startsAt,
-        timeZone: GYM_TIME_ZONE,
-      },
-      end: {
-        dateTime: input.endsAt,
-        timeZone: GYM_TIME_ZONE,
-      },
-    };
-
-    if (input.summary) body.summary = input.summary;
-    if (input.description) body.description = input.description;
-
-    return this.request<GoogleCalendarEvent>(`/events/${encodeURIComponent(eventId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
+  replaceRoster(body: RosterEventBody, etag: string): Promise<GoogleCalendarEvent> {
+    return this.request(`/events/${encodeURIComponent(body.id)}`, {
+      method: 'PATCH', headers: { 'If-Match': etag }, body: JSON.stringify(body),
     });
-  }
-
-  /**
-   * Retrieves a single event to check current status or detect manual owner edits/deletions.
-   */
-  async getTrialEvent(eventId: string): Promise<GoogleCalendarEvent | null> {
-    try {
-      return await this.request<GoogleCalendarEvent>(`/events/${encodeURIComponent(eventId)}`, {
-        method: 'GET',
-      });
-    } catch (err: any) {
-      if (err.status === 404) {
-        return null;
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Cancels/deletes an event from the Google Calendar.
-   */
-  async deleteTrialEvent(eventId: string): Promise<void> {
-    try {
-      await this.request<void>(`/events/${encodeURIComponent(eventId)}`, {
-        method: 'DELETE',
-      });
-    } catch (err: any) {
-      if (err.status === 404 || err.status === 410) {
-        // Already deleted or gone
-        return;
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Lists upcoming trial events within a time range for reconciliation and cron reminder checks.
-   */
-  async listUpcomingTrialEvents(
-    timeMin: Instant,
-    timeMax: Instant
-  ): Promise<GoogleCalendarEvent[]> {
-    const query = new URLSearchParams({
-      timeMin,
-      timeMax,
-      singleEvents: 'true',
-      orderBy: 'startTime',
-      maxResults: '250',
-    });
-
-    const result = await this.request<{ items?: GoogleCalendarEvent[] }>(`/events?${query.toString()}`, {
-      method: 'GET',
-    });
-
-    return result.items || [];
   }
 }

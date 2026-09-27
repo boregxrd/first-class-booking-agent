@@ -1,152 +1,75 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { deriveCalendarEventId, GoogleCalendarClient, GoogleCalendarEvent } from './client.js';
-import { addProspectToSlotRoster, calculateOneHourEndTime } from './slot-roster.js';
+import test from 'node:test';
+import { CalendarApiError, GoogleCalendarClient } from './client.js';
+import { buildRosterEvent, deriveSlotRosterEventId, syncSlotRoster, type ProspectSlotEntry } from './slot-roster.js';
+import { FakeRosterCalendar, TEST_SLOT } from '../llm-integration/tests/fixtures.js';
 
-test('deriveCalendarEventId generates valid, deterministic base32hex event IDs', async () => {
-  const bookingId1 = 'booking_abc123';
-  const id1 = await deriveCalendarEventId(bookingId1);
-  const id2 = await deriveCalendarEventId(bookingId1);
+const prospect: ProspectSlotEntry = { bookingId: 'booking-1', name: 'Ana', phone: '+12145550101', instagramHandle: null, language: 'es' };
 
-  // Must be deterministic
-  assert.equal(id1, id2);
-
-  // Must be valid Google Calendar event ID (lowercase [a-v0-9], length >= 5)
-  assert.match(id1, /^[a-v0-9]{5,1024}$/);
+test('slot IDs normalize offsets and different dates/hours produce different event IDs', async () => {
+  const first = await deriveSlotRosterEventId(TEST_SLOT);
+  assert.match(first, /^[a-v0-9]{5,1024}$/);
+  assert.equal(first, await deriveSlotRosterEventId('2026-09-28T08:00:00-05:00'));
+  assert.notEqual(first, await deriveSlotRosterEventId('2026-09-28T14:00:00Z'));
+  assert.notEqual(first, await deriveSlotRosterEventId('2026-11-02T14:00:00Z'));
 });
 
-test('deriveCalendarEventId produces distinct IDs for distinct booking IDs', async () => {
-  const idA = await deriveCalendarEventId('booking_1');
-  const idB = await deriveCalendarEventId('booking_2');
-  assert.notEqual(idA, idB);
+test('roster description contains full details, deduplicates booking IDs and keeps empty events', async () => {
+  const calendar = new FakeRosterCalendar();
+  const event = await syncSlotRoster(calendar, TEST_SLOT, async () => [prospect, prospect]);
+  assert.equal(event.end.dateTime, '2026-09-28T14:00:00.000Z');
+  assert.match(event.description!, /Prospects \(1\)/);
+  assert.match(event.description!, /Name|Ana/);
+  assert.match(event.description!, /2640 Old Denton/);
+  assert.match(event.description!, /Phone: \+12145550101/);
+  assert.match(event.description!, /Language: es/);
+  const empty = await syncSlotRoster(calendar, TEST_SLOT, async () => []);
+  assert.equal(empty.id, event.id);
+  assert.match(empty.description!, /Prospects \(0\)/);
 });
 
-test('calculateOneHourEndTime correctly adds 1 hour to start time', () => {
-  const start = '2026-09-28T08:00:00.000Z';
-  const end = calculateOneHourEndTime(start);
-  assert.equal(end, '2026-09-28T09:00:00.000Z');
-});
-
-test('addProspectToSlotRoster creates new event if not existing, and appends if existing', async () => {
-  const eventsDb = new Map<string, GoogleCalendarEvent>();
-
-  // Generate valid test key
-  const keyPair = (await crypto.subtle.generateKey(
-    {
-      name: 'RSASSA-PKCS1-v1_5',
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: 'SHA-256',
-    },
-    true,
-    ['sign', 'verify']
-  )) as CryptoKeyPair;
-
-  const pkcs8Buffer = (await crypto.subtle.exportKey('pkcs8', keyPair.privateKey)) as ArrayBuffer;
-  const binaryString = String.fromCharCode(...new Uint8Array(pkcs8Buffer));
-  const base64Key = btoa(binaryString);
-  const pemKey = `-----BEGIN PRIVATE KEY-----\n${base64Key}\n-----END PRIVATE KEY-----`;
-
-  // Mock global fetch simulating a live Google Calendar store
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url: any, init: any) => {
-    const urlStr = url.toString();
-    const method = init?.method || 'GET';
-
-    if (urlStr.includes('oauth2.googleapis.com/token')) {
-      return new Response(JSON.stringify({ access_token: 'fake_access_token', expires_in: 3600 }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    const eventIdMatch = urlStr.match(/\/events\/([^/?]+)/);
-    const eventId = eventIdMatch ? decodeURIComponent(eventIdMatch[1]) : null;
-
-    if (method === 'GET') {
-      if (eventId && eventsDb.has(eventId)) {
-        return new Response(JSON.stringify(eventsDb.get(eventId)), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-      if (eventId) {
-        return new Response('Not Found', { status: 404 });
-      }
-      return new Response(JSON.stringify({ items: Array.from(eventsDb.values()) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    if (method === 'POST' || method === 'PATCH') {
-      const body = JSON.parse(init.body);
-      const targetId = eventId || body.id || 'event_1';
-      const existing = eventsDb.get(targetId);
-      if (method === 'POST') {
-        assert.equal(eventId, null, 'insertion uses the events collection endpoint');
-        if (existing) return new Response('Conflict', { status: 409 });
-      } else if (!existing) return new Response('Not Found', { status: 404 });
-
-      const savedEvent: GoogleCalendarEvent = {
-        id: targetId,
-        etag: '"etag1"',
-        status: 'confirmed',
-        summary: body.summary ?? existing?.summary ?? '',
-        description: body.description ?? existing?.description ?? '',
-        start: body.start ?? existing?.start ?? { dateTime: '' },
-        end: body.end ?? existing?.end ?? { dateTime: '' },
-        updated: new Date().toISOString(),
-      };
-      eventsDb.set(targetId, savedEvent);
-      return new Response(JSON.stringify(savedEvent), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    return new Response('Unsupported method', { status: 405 });
+test('CAS conflict reloads the source roster instead of losing a concurrent prospect', async () => {
+  const calendar = new FakeRosterCalendar();
+  await syncSlotRoster(calendar, TEST_SLOT, async () => [prospect]);
+  let loads = 0;
+  const realReplace = calendar.replaceRoster.bind(calendar);
+  calendar.replaceRoster = async (body, etag) => {
+    if (loads === 1) throw new CalendarApiError(412);
+    return realReplace(body, etag);
   };
+  const final = await syncSlotRoster(calendar, TEST_SLOT, async () => {
+    loads++;
+    return loads === 1 ? [prospect] : [prospect, { ...prospect, bookingId: 'booking-2', name: 'Sofia', phone: null, instagramHandle: '@sofia' }];
+  });
+  assert.equal(loads, 2);
+  assert.match(final.description!, /Ana/); assert.match(final.description!, /Sofia/);
+});
 
+test('externally moved/deleted events are not silently overwritten', async () => {
+  const calendar = new FakeRosterCalendar();
+  const event = await syncSlotRoster(calendar, TEST_SLOT, async () => [prospect]);
+  calendar.events.set(event.id, { ...event, status: 'cancelled' });
+  await assert.rejects(syncSlotRoster(calendar, TEST_SLOT, async () => []), /modified externally/);
+});
+
+test('Google transport inserts on collection and uses If-Match for roster patches', async () => {
+  const pair = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']) as CryptoKeyPair;
+  const key = await crypto.subtle.exportKey('pkcs8', pair.privateKey) as ArrayBuffer;
+  const pem = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...new Uint8Array(key)))}\n-----END PRIVATE KEY-----`;
+  const original = globalThis.fetch;
+  const methods: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes('oauth2.googleapis.com')) return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }));
+    methods.push(init?.method ?? 'GET');
+    if (init?.method === 'POST') assert.ok(String(url).endsWith('/events'));
+    if (init?.method === 'PATCH') assert.equal(new Headers(init.headers).get('If-Match'), '"1"');
+    return new Response(JSON.stringify({ ...JSON.parse(init!.body as string), etag: '"1"' }));
+  };
   try {
-    const client = new GoogleCalendarClient({
-      calendarId: 'test_calendar@group.calendar.google.com',
-      clientEmail: 'test-sa@project.iam.gserviceaccount.com',
-      privateKey: pemKey,
-    });
-
-    const slotTime = '2026-09-28T08:00:00.000Z';
-
-    // 1. Add first prospect -> should create new event with 1 hour duration
-    const result1 = await addProspectToSlotRoster(client, {
-      startsAt: slotTime,
-      prospect: {
-        firstName: 'Ana',
-        phone: '+12145550101',
-      },
-    });
-
-    assert.equal(result1.isNewEvent, true);
-    assert.equal(result1.totalAttendees, 1);
-    assert.match(result1.event.description || '', /Ana/);
-    assert.match(result1.event.description || '', /\+12145550101/);
-    assert.equal(result1.event.end.dateTime, '2026-09-28T09:00:00.000Z');
-
-    // 2. Add second prospect to same slot -> should modify existing event description
-    const result2 = await addProspectToSlotRoster(client, {
-      startsAt: slotTime,
-      prospect: {
-        firstName: 'Sofía',
-        instagramHandle: '@sofia.fit',
-      },
-    });
-
-    assert.equal(result2.isNewEvent, false);
-    assert.equal(result2.totalAttendees, 2);
-    assert.match(result2.event.description || '', /Attendees \(2\):/);
-    assert.match(result2.event.description || '', /Ana/);
-    assert.match(result2.event.description || '', /Sofía/);
-    assert.match(result2.event.description || '', /@sofia.fit/);
-
-    const booking = { bookingId: 'retry-test', customerName: 'Test', startsAt: slotTime, endsAt: calculateOneHourEndTime(slotTime) };
-    const inserted = await client.createTrialEvent(booking);
-    const count = eventsDb.size;
-    const replayed = await client.createTrialEvent(booking);
-    assert.equal(replayed.id, inserted.id);
-    assert.equal(eventsDb.size, count, 'a retry reconciles HTTP 409 instead of creating another event');
-    await assert.rejects(client.createTrialEvent({ ...booking, startsAt: '2026-09-28T09:00:00Z' }), /409/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+    const client = new GoogleCalendarClient({ calendarId: 'test-calendar', clientEmail: 'test@example.com', privateKey: pem });
+    const body = buildRosterEvent(await deriveSlotRosterEventId(TEST_SLOT), TEST_SLOT, [prospect]);
+    await client.insertEvent(body);
+    await client.replaceRoster(body, '"1"');
+    assert.deepEqual(methods, ['POST', 'PATCH']);
+  } finally { globalThis.fetch = original; }
 });

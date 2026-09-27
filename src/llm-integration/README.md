@@ -25,7 +25,9 @@ OpenAI's model page lists GPT-4.1 mini at $0.40 per million input tokens and $1.
 
 ### Booking confirmation
 
-The model collects name, international WhatsApp phone and class time, then calls `proposeTrial`. The processor validates these and emits a summary with a request to reply **“sí confirmo” / “yes confirm”** to approve the reservation and WhatsApp confirmation/reminder. Only that reply to a current proposal calls BookingService; a model boolean is never authorization. The proposal expires after 30 minutes. A question or correction invalidates the old proposal, requiring a fresh summary. Other affirmative phrases currently need clarification rather than automatically booking.
+The model collects name, a phone number or Instagram handle, and class time, then calls `proposeTrial`. The processor validates these and emits a summary with a request to reply **“sí confirmo” / “yes confirm”**. With a phone, the summary also requests WhatsApp confirmation/reminder permission; Instagram-only bookings do not grant that consent. Only that reply to a current proposal calls BookingService; a model boolean is never authorization. The proposal expires after 30 minutes. A question or correction invalidates the old proposal, requiring a fresh summary. Other affirmative phrases currently need clarification rather than automatically booking.
+
+BookingService maintains **one shared one-hour Calendar event per slot**. Each customer still has an individual booking ID; the agent must never move/delete a Calendar event itself to change that customer's booking.
 
 The durable checkpoint saves the customer/consent and stable booking-operation key **before** invoking Calendar through BookingService. Retries reuse the key. Store implementations must serialize conversations, atomically persist processed-message results and pending outbound replies, and make customer fields available to BookingService. BookingService still enforces customer ownership, eligibility and idempotency. Outbound dispatch must enforce its own send-state policy; returning a cached turn must not resend an already delivered reply.
 

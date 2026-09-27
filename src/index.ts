@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { createWebhookRoutes } from './llm-integration/webhooks/routes.js';
 import { handleQueue } from './llm-integration/runtime/queue.js';
-import { Env } from './types/env.js';
+import type { Env } from './types/env.js';
+import { handleScheduled } from './runtime/scheduled.js';
 
 // Initialize Hono with Cloudflare Workers environment bindings
 const app = new Hono<{ Bindings: Env }>();
@@ -17,8 +18,6 @@ app.get('/', (c) => c.text('First-Class Booking Agent (Cloudflare Worker) is run
 
 app.route('/webhook', createWebhookRoutes());
 
-import { createServices } from './runtime/factory.js';
-
 // ============================================================================
 // CLOUDFLARE WORKERS HANDLERS (Fetch, Queues, Scheduled Cron)
 // ============================================================================
@@ -30,12 +29,5 @@ export default {
   queue: handleQueue,
 
   // Scheduled handler for WhatsApp reminders & calendar reconciliation (Cron Triggers)
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    console.log(`[Scheduled] Cron trigger executed at ${new Date(event.scheduledTime).toISOString()}`);
-    const services = createServices(env);
-    if (services.scheduler) {
-      const processed = await services.scheduler.processDueNotifications(new Date(event.scheduledTime).toISOString());
-      console.log(`[Scheduled] Processed ${processed} due notifications.`);
-    }
-  },
+  scheduled: handleScheduled,
 };

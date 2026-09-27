@@ -1,147 +1,79 @@
-import { GYM_TIME_ZONE, Instant } from '../../model.js';
-import { deriveCalendarEventId, GoogleCalendarClient, GoogleCalendarEvent } from './client.js';
+import { GYM_TIME_ZONE, type Instant, type Language } from '../../model.js';
+import { gymContext } from '../llm-integration/gym-context.js';
+import { CalendarApiError, type GoogleCalendarEvent, type RosterCalendar, type RosterEventBody } from './client.js';
 
 export interface ProspectSlotEntry {
-  firstName: string;
-  phone?: string | null;
-  instagramHandle?: string | null;
+  bookingId: string;
+  name: string;
+  phone: string | null;
+  instagramHandle: string | null;
+  language: Language;
 }
 
-export interface AddProspectToSlotInput {
-  /** ISO string of the slot start time (e.g., "2026-09-28T08:00:00-05:00" or UTC "2026-09-28T13:00:00Z") */
-  startsAt: Instant;
-  prospect: ProspectSlotEntry;
-  address?: string;
-}
-
-export interface SlotRosterResult {
-  event: GoogleCalendarEvent;
-  isNewEvent: boolean;
-  totalAttendees: number;
-}
-
-/**
- * Derives a deterministic event ID for a recurring class time slot (e.g. 2026-09-28T08:00).
- */
+/** Canonical UTC instant: equivalent local-offset timestamps map to exactly one event. */
 export async function deriveSlotRosterEventId(startsAt: Instant): Promise<string> {
-  const date = new Date(startsAt);
-  // Format as UTC timestamp string for stable slot key
-  const slotKey = `slot_${date.toISOString().replace(/[^a-zA-Z0-9]/g, '')}`;
-  return deriveCalendarEventId(slotKey);
+  const start = new Date(startsAt).toISOString();
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`dwc_hourly_roster:${start}`));
+  // Hex is a subset of Google's base32hex alphabet; scope is one dedicated calendar.
+  return `d${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+const line = (value: string) => value.replace(/[\r\n]+/g, ' ').trim();
+
+export function buildRosterEvent(eventId: string, startsAt: Instant, prospects: ProspectSlotEntry[]): RosterEventBody {
+  const start = new Date(startsAt).toISOString();
+  const roster = [...new Map(prospects.map((person) => [person.bookingId, person])).values()]
+    .sort((a, b) => a.bookingId.localeCompare(b.bookingId));
+  const description = [
+    'Dallas Wellness Club — free trial prospects',
+    `Address: ${gymContext.address}`,
+    `Duration: 1 hour | Time zone: ${GYM_TIME_ZONE}`,
+    `Prospects (${roster.length}):`,
+    ...roster.map((person) => [
+      `- ${line(person.name)}`,
+      person.phone ? `Phone: ${line(person.phone)}` : null,
+      person.instagramHandle ? `Instagram: @${line(person.instagramHandle).replace(/^@/, '')}` : null,
+      `Language: ${person.language}`,
+      `Booking ID: ${person.bookingId}`,
+    ].filter(Boolean).join(' | ')),
+    '',
+    'Roster maintained by the booking app. Change individual bookings through the app/chat.',
+  ].join('\n');
+  return {
+    id: eventId, status: 'confirmed', summary: `DWC Free Trials — ${roster.length} prospects`,
+    description, location: gymContext.address,
+    start: { dateTime: start, timeZone: GYM_TIME_ZONE },
+    end: { dateTime: new Date(Date.parse(start) + 60 * 60_000).toISOString(), timeZone: GYM_TIME_ZONE },
+    extendedProperties: { private: { dwc_slot_start: start } },
+  };
 }
 
 /**
- * Formats a single attendee line in the roster description.
+ * Read Calendar BEFORE loading D1's latest desired roster. If another sync wins,
+ * If-Match fails and we reload both. Never append text or match arbitrary events by time.
+ * Keep empty roster events: deleting an event can tombstone its deterministic ID.
  */
-function formatAttendeeLine(entry: ProspectSlotEntry): string {
-  const contact = entry.phone ? `Phone: ${entry.phone}` : entry.instagramHandle ? `IG: ${entry.instagramHandle}` : 'N/A';
-  return `- ${entry.firstName} (${contact})`;
-}
-
-/**
- * Calculates end time exactly 1 hour (hard-coded) after start time.
- */
-export function calculateOneHourEndTime(startsAt: Instant): Instant {
-  const startDate = new Date(startsAt);
-  const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // 1 hour in milliseconds
-  return endDate.toISOString();
-}
-
-/**
- * Verifies if an event exists for the specified Google Calendar slot.
- * - If it does NOT exist: Creates a new event with 1-hour duration and initializes the attendee list.
- * - If it DOES exist: Modifies the existing event description to add the new user.
- */
-export async function addProspectToSlotRoster(
-  client: GoogleCalendarClient,
-  input: AddProspectToSlotInput
-): Promise<SlotRosterResult> {
-  const { startsAt, prospect, address = '2640 Old Denton Rd, Carrollton, TX 75007' } = input;
-  const endsAt = calculateOneHourEndTime(startsAt);
-  const slotEventId = await deriveSlotRosterEventId(startsAt);
-
-  // 1. Check if the slot event already exists by deterministic slot ID
-  let existingEvent: GoogleCalendarEvent | null = await client.getTrialEvent(slotEventId);
-
-  // Fallback: If not found by deterministic ID, check by time range (within +/- 1 minute window)
-  if (!existingEvent) {
-    const startDate = new Date(startsAt);
-    const windowMin = new Date(startDate.getTime() - 60 * 1000).toISOString();
-    const windowMax = new Date(startDate.getTime() + 60 * 1000).toISOString();
-
-    const candidates = await client.listUpcomingTrialEvents(windowMin, windowMax);
-    const matched = candidates.find(
-      (e) => e.status !== 'cancelled' && Math.abs(new Date(e.start.dateTime).getTime() - startDate.getTime()) < 60000
-    );
-    if (matched) {
-      existingEvent = matched;
+export async function syncSlotRoster(
+  calendar: RosterCalendar,
+  startsAt: Instant,
+  loadProspects: () => Promise<ProspectSlotEntry[]>,
+): Promise<GoogleCalendarEvent> {
+  const eventId = await deriveSlotRosterEventId(startsAt);
+  const start = new Date(startsAt).toISOString();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const existing = await calendar.getEvent(eventId);
+    if (existing && (existing.status !== 'confirmed' || !existing.etag
+      || existing.extendedProperties?.private?.dwc_slot_start !== start
+      || Date.parse(existing.start.dateTime) !== Date.parse(start)
+      || Date.parse(existing.end.dateTime) !== Date.parse(start) + 60 * 60_000)) {
+      throw new Error('Shared slot was modified externally; reconciliation is required');
+    }
+    const body = buildRosterEvent(eventId, start, await loadProspects());
+    try {
+      return existing ? await calendar.replaceRoster(body, existing.etag) : await calendar.insertEvent(body);
+    } catch (error) {
+      if (!(error instanceof CalendarApiError) || ![409, 412].includes(error.status)) throw error;
     }
   }
-
-  const newAttendeeLine = formatAttendeeLine(prospect);
-
-  // 2. If event DOES NOT exist -> Create new event
-  if (!existingEvent) {
-    const description = ['Attendees (1):', newAttendeeLine].join('\n');
-
-    const newEvent = await client.createTrialEvent({
-      bookingId: `slot_${new Date(startsAt).toISOString()}`,
-      customerName: `Class Roster (${prospect.firstName})`,
-      whatsappPhone: prospect.phone,
-      instagramHandle: prospect.instagramHandle,
-      startsAt,
-      endsAt,
-      address,
-    });
-
-    // Update with exact roster header & description
-    const updated = await client.updateTrialEvent(newEvent.id, {
-      startsAt,
-      endsAt,
-      summary: `DWC Class — ${prospect.firstName}`,
-      description,
-    });
-
-    return {
-      event: updated,
-      isNewEvent: true,
-      totalAttendees: 1,
-    };
-  }
-
-  // 3. If event DOES exist -> Append new attendee to description
-  const currentDescription = existingEvent.description || 'Attendees (0):';
-  const lines = currentDescription.split('\n');
-
-  // Prevent duplicate entry if the exact same attendee info is already listed
-  let updatedDescription: string;
-  let attendeeCount = 1;
-
-  if (currentDescription.includes(newAttendeeLine)) {
-    // Already in roster
-    updatedDescription = currentDescription;
-    const match = currentDescription.match(/Attendees \((\d+)\)/);
-    attendeeCount = match ? parseInt(match[1], 10) : 1;
-  } else {
-    // Add new attendee
-    const attendeeLines = lines.filter((line) => line.trim().startsWith('-'));
-    attendeeCount = attendeeLines.length + 1;
-
-    const header = `Attendees (${attendeeCount}):`;
-    const remainingLines = lines.filter((l) => !l.startsWith('Attendees ('));
-    updatedDescription = [header, ...remainingLines, newAttendeeLine].join('\n');
-  }
-
-  const updatedEvent = await client.updateTrialEvent(existingEvent.id, {
-    startsAt: existingEvent.start.dateTime,
-    endsAt: existingEvent.end.dateTime,
-    summary: `DWC Class (${attendeeCount} attendees)`,
-    description: updatedDescription,
-  });
-
-  return {
-    event: updatedEvent,
-    isNewEvent: false,
-    totalAttendees: attendeeCount,
-  };
+  throw new Error('Shared roster changed repeatedly; retry synchronization later');
 }

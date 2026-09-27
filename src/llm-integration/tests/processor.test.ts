@@ -52,7 +52,7 @@ function fixture(responses: ModelReply[]) {
     getBooking: async () => null,
     bookTrial: async (context, args) => {
       assert.equal(state.customer.name, 'Ana', 'customer checkpoint must precede booking');
-      assert.equal(state.customer.whatsappConsent?.sourceMessageId, 'confirmation');
+      if (state.customer.whatsappPhone) assert.equal(state.customer.whatsappConsent?.sourceMessageId, 'confirmation');
       operations.push(context.operationKey);
       if (failBooking) throw new Error('timeout after remote creation');
       return { status: 'succeeded', booking: {
@@ -99,6 +99,18 @@ test('yes without a pending proposal cannot authorize a booking', async () => {
   const f = fixture([reply('¿Qué día prefieres?')]);
   await f.process(input('confirmation', 'sí confirmo'));
   assert.equal(f.operations.length, 0);
+});
+
+test('Instagram-only contact books after confirmation without granting WhatsApp consent', async () => {
+  const f = fixture([propose({ name: 'Ana', phone: null, instagramHandle: '@ana.fit', startsAt })]);
+  const proposal = await f.process(input('details', 'Soy Ana, mi Instagram es @ana.fit, quiero el lunes a las 8'));
+  assert.equal(proposal.bookingStatus, 'awaiting_confirmation');
+  assert.match(proposal.reply, /@ana.fit/);
+  assert.doesNotMatch(proposal.reply, /WhatsApp/);
+  assert.equal((await f.process(input('confirmation', 'sí confirmo'))).bookingStatus, 'confirmed');
+  assert.equal(f.session.state.customer.whatsappPhone, null);
+  assert.equal(f.session.state.customer.instagramHandle, '@ana.fit');
+  assert.equal(f.session.state.customer.whatsappConsent, null);
 });
 
 test('a question/correction invalidates the previous confirmation target', async () => {

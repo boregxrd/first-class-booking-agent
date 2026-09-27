@@ -2,18 +2,19 @@
 
 ## Booking service — friend
 
-- [ ] Prevent duplicate bookings when requests retry or arrive together.
-- [ ] Recover safely when Calendar succeeds but the database update fails.
-- [ ] Make rescheduling and cancellation safe to retry.
-- [ ] Keep bookings/reminders in sync when the owner edits Calendar.
-- [ ] Send reminders only for current bookings with WhatsApp permission; handle delivery failures.
-- [ ] Confirm booking rules: lead time, booking horizon, closures, repeat trials and reminder timing.
-- [ ] Keep one Calendar event per prospect; resolve the unused shared-roster alternative.
+- [x] One shared one-hour Calendar event per slot, listing each prospect's name, phone/Instagram, language and booking ID.
+- [x] Reschedule/cancel individual prospects without moving or deleting everyone else's event.
+- [x] Prevent duplicate active bookings; persist changes before Calendar sync and retry interrupted operations.
+- [x] Rebuild rosters from D1 with Calendar conflict protection; test shared-slot updates and failures locally.
+- [ ] Define how owner edits/deletes a shared event affect the entire class; add reconciliation and alerts.
+- [ ] Finish notification retry/lease recovery, delivery tracking and cancellation-during-send tests.
+- [ ] Confirm lead time, booking horizon, closures, repeat-trial rules and reminder timing.
 - [ ] Set up Google Calendar credentials and approved WhatsApp templates.
-- [ ] Add failure/concurrency tests; test real booking, change, cancellation and reminder delivery.
+- [ ] Apply all migrations, then test shared rosters, rescheduling, cancellation and per-person reminders against real providers.
 
 ## Agent and credentials — you
 
+- [x] Accept name plus phone or Instagram handle; request WhatsApp permission only when a phone is supplied.
 - [ ] Process incoming messages through a durable queue, in order per customer.
 - [ ] Save outgoing replies and retry safely without losing or duplicating messages.
 - [ ] Finish webhook validation and fix sending for the Instagram Login API.
@@ -25,6 +26,6 @@
 - [ ] Add the OpenAI key; create Meta app and have your brother authorize Instagram.
 - [ ] Connect webhooks; receive a test DM in observe-only mode, then allow only your sender ID.
 - [ ] Confirm missing gym FAQs and coordinate testing/cutover with the existing bot.
-- [ ] Test the full flow together: DM → AI → confirmed booking → Calendar → reply/reminder.
+- [ ] Test two prospects booking the same hour: one Calendar event, two roster entries, separate confirmations.
 
-Technical details: [review](docs/REVIEW.md). Account setup: [guide](docs/meta/README.md).
+Design/testing details: [review](docs/REVIEW.md). Account setup: [guide](docs/meta/README.md).

@@ -13,7 +13,7 @@ export class D1ConversationStore implements ConversationStore {
     // 1. Get or create Customer & ChannelIdentity
     const identityRow = await this.db
       .prepare(
-        `SELECT ci.customer_id, c.name, c.whatsapp_phone, c.language, c.created_at, c.updated_at
+        `SELECT ci.customer_id, c.name, c.whatsapp_phone, c.instagram_handle, c.language, c.created_at, c.updated_at
          FROM channel_identities ci
          JOIN customers c ON ci.customer_id = c.id
          WHERE ci.channel = ? AND ci.business_account_id = ? AND ci.sender_id = ?`
@@ -23,6 +23,7 @@ export class D1ConversationStore implements ConversationStore {
         customer_id: string;
         name: string | null;
         whatsapp_phone: string | null;
+        instagram_handle: string | null;
         language: 'es' | 'en';
         created_at: string;
         updated_at: string;
@@ -37,6 +38,7 @@ export class D1ConversationStore implements ConversationStore {
         id: customerId,
         name: identityRow.name,
         whatsappPhone: identityRow.whatsapp_phone,
+        instagramHandle: identityRow.instagram_handle,
         language: identityRow.language,
         whatsappConsent: null, // Loaded on demand if present in consents table
         createdAt: identityRow.created_at,
@@ -148,8 +150,8 @@ export class D1ConversationStore implements ConversationStore {
 
     const checkpointStatements = (value: ConversationState, timestamp: string): D1PreparedStatement[] => {
       const statements = [
-        db.prepare(`UPDATE customers SET name = ?, whatsapp_phone = ?, language = ?, updated_at = ? WHERE id = ?`)
-          .bind(value.customer.name, value.customer.whatsappPhone, value.customer.language, timestamp, value.customer.id),
+        db.prepare(`UPDATE customers SET name = ?, whatsapp_phone = ?, instagram_handle = ?, language = ?, updated_at = ? WHERE id = ?`)
+          .bind(value.customer.name, value.customer.whatsappPhone, value.customer.instagramHandle ?? null, value.customer.language, timestamp, value.customer.id),
         db.prepare(`UPDATE conversations SET pending_proposal = ?, booking_operation = ?, revision = revision + 1, updated_at = ? WHERE id = ?`)
           .bind(value.proposal ? JSON.stringify(value.proposal) : null, value.bookingOperation ? JSON.stringify(value.bookingOperation) : null, timestamp, value.id),
       ];
