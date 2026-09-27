@@ -17,6 +17,8 @@ app.get('/', (c) => c.text('First-Class Booking Agent (Cloudflare Worker) is run
 
 app.route('/webhook', createWebhookRoutes());
 
+import { createServices } from './runtime/factory.js';
+
 // ============================================================================
 // CLOUDFLARE WORKERS HANDLERS (Fetch, Queues, Scheduled Cron)
 // ============================================================================
@@ -30,6 +32,10 @@ export default {
   // Scheduled handler for WhatsApp reminders & calendar reconciliation (Cron Triggers)
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     console.log(`[Scheduled] Cron trigger executed at ${new Date(event.scheduledTime).toISOString()}`);
-    // Future: Person 2 Reminder scheduler
+    const services = createServices(env);
+    if (services.scheduler) {
+      const processed = await services.scheduler.processDueNotifications(new Date(event.scheduledTime).toISOString());
+      console.log(`[Scheduled] Processed ${processed} due notifications.`);
+    }
   },
 };

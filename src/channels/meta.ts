@@ -1,4 +1,6 @@
 import { Context } from 'hono';
+import { InboundMessage } from '../../model.js';
+import { createServices } from '../runtime/factory.js';
 import { Env } from '../types/env.js';
 import {
   InstagramMessagingEvent,
@@ -10,6 +12,7 @@ import {
   WhatsAppStatus,
   WhatsAppWebhookPayload,
 } from '../types/meta.js';
+import { sendInstagramReply, sendWhatsAppText } from './outbound.js';
 
 // ============================================================================
 // SIGNATURE & AUTHENTICATION HELPERS
@@ -25,7 +28,6 @@ export function handleWebhookChallenge(c: Context<{ Bindings: Env }>) {
 
   const configuredVerifyToken = c.env.META_VERIFY_TOKEN;
 
-  // Ensure verify token is set and matches
   if (!configuredVerifyToken) {
     console.error('[Meta Webhook] META_VERIFY_TOKEN is not configured in environment.');
     return c.text('Server Misconfigured', 500);
@@ -57,7 +59,7 @@ export async function verifyMetaSignature(
     return false;
   }
 
-  const expectedSignature = signatureHeader.slice(7); // Remove 'sha256='
+  const expectedSignature = signatureHeader.slice(7);
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
@@ -81,48 +83,50 @@ export async function verifyMetaSignature(
 
 /**
  * Handles incoming Instagram Direct Message events.
- *
- * Key fields received:
- * - `event.sender.id`: Instagram-Scoped ID (IGSID) of the sender.
- * - `event.recipient.id`: Your Instagram business account ID.
- * - `event.timestamp`: Milliseconds timestamp.
- * - `event.message.mid`: Unique message ID.
- * - `event.message.text`: Message text content (if text).
- * - `event.message.attachments`: Array of media (image, video, audio, stories).
- * - `event.message.is_echo`: true if message was sent by your own business account.
- * - `event.message.reply_to.mid`: Parent message ID if quoting a previous message.
  */
 export async function handleInstagramMessage(
   event: InstagramMessagingEvent,
   env: Env,
   ctx?: unknown
 ): Promise<void> {
-  // Ignore echo messages (outbound messages sent by business account from other devices)
-  if (event.message?.is_echo) {
+  if (event.message?.is_echo || !event.message?.text) {
     return;
   }
 
   const senderId = event.sender.id;
-  const messageText = event.message?.text;
-  console.log(`[Instagram] Inbound message from IGSID: ${senderId} - "${messageText ?? '[Media/Action]'}"`);
+  const recipientId = event.recipient.id;
+  const messageText = event.message.text;
+  const messageId = event.message.mid;
+  const now = new Date().toISOString();
 
-  // TODO (Person 1 / Agent):
-  // 1. Durably enqueue or serialize message processing.
-  // 2. Load conversation state & invoke tool-calling LLM.
-  // 3. Send outbound reply via Meta Graph API.
+  const inbound: InboundMessage = {
+    identity: {
+      channel: 'instagram',
+      businessAccountId: recipientId,
+      senderId,
+    },
+    providerMessageId: messageId,
+    sentAt: new Date(event.timestamp).toISOString(),
+    receivedAt: now,
+    text: messageText,
+  };
+
+  const services = createServices(env);
+
+  try {
+    const turnResult = await services.processor(inbound);
+    console.log(`[Instagram] Processed turn: ${turnResult.bookingStatus}. Sending reply.`);
+
+    if (env.META_ACCESS_TOKEN && turnResult.reply) {
+      await sendInstagramReply(senderId, turnResult.reply, env.META_ACCESS_TOKEN);
+    }
+  } catch (err) {
+    console.error('[Instagram] Error processing message:', err);
+  }
 }
 
 /**
  * Handles incoming WhatsApp Cloud API messages.
- *
- * Key fields received:
- * - `message.from`: Customer's WhatsApp phone number (wa_id).
- * - `message.id`: WhatsApp message ID (`wamid.HB...`).
- * - `message.type`: `'text' | 'image' | 'audio' | 'video' | 'interactive' | ...`
- * - `message.text.body`: Text message body.
- * - `message.context.id`: Referenced message ID if customer replied to a quote.
- * - `metadata.phone_number_id`: Your business phone number ID for API replies.
- * - `contacts`: Customer's profile name and matching `wa_id`.
  */
 export async function handleWhatsAppMessage(
   message: WhatsAppIncomingMessage,
@@ -131,35 +135,58 @@ export async function handleWhatsAppMessage(
   env: Env,
   ctx?: unknown
 ): Promise<void> {
-  const senderContact = contacts?.find((c) => c.wa_id === message.from);
-  const senderName = senderContact?.profile.name || 'Prospect';
-  const textBody = message.text?.body;
+  if (message.type !== 'text' || !message.text?.body) {
+    return;
+  }
 
-  console.log(`[WhatsApp] Inbound message from ${senderName} (${message.from}): "${textBody ?? `[${message.type}]`}"`);
+  const now = new Date().toISOString();
+  const inbound: InboundMessage = {
+    identity: {
+      channel: 'whatsapp',
+      businessAccountId: metadata.phone_number_id,
+      senderId: message.from,
+    },
+    providerMessageId: message.id,
+    sentAt: new Date(parseInt(message.timestamp, 10) * 1000).toISOString(),
+    receivedAt: now,
+    text: message.text.body,
+  };
 
-  // TODO (Person 1 / Agent):
-  // 1. Process customer message against BookingService.
-  // 2. Invoke LLM and send WhatsApp in-window reply.
+  const services = createServices(env);
+
+  try {
+    const turnResult = await services.processor(inbound);
+    console.log(`[WhatsApp] Processed turn: ${turnResult.bookingStatus}. Sending reply.`);
+
+    if (env.META_ACCESS_TOKEN && turnResult.reply) {
+      await sendWhatsAppText(message.from, turnResult.reply, metadata.phone_number_id, env.META_ACCESS_TOKEN);
+    }
+  } catch (err) {
+    console.error('[WhatsApp] Error processing message:', err);
+  }
 }
 
 /**
  * Handles WhatsApp delivery and read status callbacks.
- *
- * Key fields received:
- * - `status.id`: Message ID (`wamid...`).
- * - `status.status`: `'sent' | 'delivered' | 'read' | 'failed'`.
- * - `status.recipient_id`: Customer's phone number.
- * - `status.errors`: Error details if delivery failed.
  */
 export async function handleWhatsAppStatus(
   status: WhatsAppStatus,
+  businessAccountId: string,
   env: Env,
   ctx?: unknown
 ): Promise<void> {
   console.log(`[WhatsApp Status] Message ${status.id} status changed to: ${status.status}`);
 
-  // TODO (Person 2 / NotificationStatusHandler):
-  // Reconcile status callback with notification job table in D1.
+  const services = createServices(env);
+  if (services.statusHandler) {
+    await services.statusHandler.handleDeliveryUpdate({
+      businessAccountId,
+      providerMessageId: status.id,
+      status: status.status,
+      occurredAt: new Date(parseInt(status.timestamp, 10) * 1000).toISOString(),
+      errorCode: status.errors?.[0]?.code?.toString(),
+    });
+  }
 }
 
 // ============================================================================
@@ -218,7 +245,7 @@ export async function processMetaWebhook(
 
           if (statuses && statuses.length > 0) {
             for (const status of statuses) {
-              await handleWhatsAppStatus(status, env, ctx);
+              await handleWhatsAppStatus(status, metadata.phone_number_id, env, ctx);
             }
           }
         }

@@ -7,6 +7,17 @@
   "vars": {
     "META_VERIFY_TOKEN": "change_this_to_your_custom_verify_token"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dwc-booking-db",
+      "database_id": "dwc-booking-db-id",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
   "observability": {
     "enabled": true
   }

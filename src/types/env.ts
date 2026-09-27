@@ -12,6 +12,11 @@ export interface Env {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
 
+  // Google Calendar API Bindings (Service Account)
+  GOOGLE_CALENDAR_ID?: string;
+  GOOGLE_CLIENT_EMAIL?: string;
+  GOOGLE_PRIVATE_KEY?: string;
+
   // Cloudflare D1 Database Binding
   DB?: D1Database;
 
