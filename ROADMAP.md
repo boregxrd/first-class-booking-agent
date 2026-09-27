@@ -61,6 +61,9 @@ Yes, the LLM client returns a Promise and the consumer awaits it. The customer r
 
 Use `model.ts` for provider-independent domain types and service interfaces; keep Meta wire payloads in A's adapter. TypeScript types are not runtime validation or SQL schemas: those are separate tasks below.
 
+- [x] Define initial shared TypeScript models and BookingService/notification interfaces in `model.ts`.
+- [ ] Review the contract together before implementing adapters; model types are not wired into the current server yet.
+
 The integration boundary is `BookingService`: `getClassSchedule`, `getBooking`, `bookTrial`, `rescheduleTrial`, `cancelTrial`. A supplies a trusted customer context; model-generated tool arguments never supply customer identity, consent evidence, or idempotency keys. B validates schedule/ownership and handles persistence/Calendar side effects. Confirmation is allowed only after the service reports successful Calendar creation.
 
 `WhatsAppTemplateSender` is the reverse boundary: A implements the channel API adapter; B uses it to deliver persisted confirmation/reminder jobs. Delivery receipts return to B's `NotificationStatusHandler`.
@@ -69,6 +72,22 @@ The integration boundary is `BookingService`: `getClassSchedule`, `getBooking`, 
 - B can test with a fake WhatsAppTemplateSender while A builds Meta sending.
 - Suggested folders below are planned, not already implemented. Keep each person's changes in their owned folders; coordinate edits to `model.ts`.
 - A owns runtime setup, `package.json`, worker entrypoint, deployment config, conversation migrations. B owns booking/notification migrations. Prefix migration filenames with distinct ordered numbers and agree their order before merge.
+
+### Proposed persistence schema
+
+| Owner | Table | Important fields/constraints |
+| --- | --- | --- |
+| A | `customers` | ID, name, normalized phone, language, timestamps; do not automatically merge people by entered phone |
+| A | `channel_identities` | Customer FK; unique `(channel, business_account_id, sender_id)` |
+| A | `consents` | Customer FK, phone, purpose, grant/revoke timestamps and source message/identity |
+| A | `conversations` | Customer/identity FK, selected start time, revision |
+| A | `messages` | Conversation FK, role/direction, text or structured tool turn, provider ID, processing/send state; unique inbound channel/account/message key |
+| B | `bookings` | Customer FK, UTC start/end, status, revision, Calendar ID/event ID/etag; partial unique customer index for pending/confirmed bookings (transition past confirmed bookings to elapsed explicitly) |
+| B | `booking_operations` | Unique `(customer_id, operation_key)`, action, argument fingerprint, booking FK, desired change, processing state/result; preserves pending reschedules without overwriting confirmed times |
+| B | `notification_jobs` | Booking FK, revision, kind, scheduled time, lease, attempts, send state/provider ID; unique `(booking_id, booking_revision, kind)` |
+| B | `notification_delivery_events` | Provider message ID, status, timestamp, error; retain early callbacks that arrive before the send result is persisted |
+
+The schedule can start as version-controlled configuration rather than a class/session table. Persist tool-call/result history so interrupted turns can recover. The elapsed transition must run before testing eligibility for a new booking; it is not proof the customer attended or permission for a second trial. SQL migrations, indexes, runtime validators and repository functions are still implementation work.
 
 ## Part A — Messaging, conversation agent, and runtime (Person 1)
 
@@ -165,4 +184,7 @@ Owner inputs still needed: actual class duration, confirmed weekly times/closure
 ## Validation log
 
 - Baseline `npx tsc --noEmit`: passed during this audit.
+- `npx tsc --noEmit` with shared models: passed.
+- Local HTTP smoke checks: health, challenge acceptance/rejection, unsigned request rejection with a configured secret, malformed JSON rejection, signed Instagram/WhatsApp message routing and WhatsApp status logging passed.
+- Confirmed structural-validation gap: a signed JSON `null` payload returns HTTP 500. Fix and regression coverage are assigned to A1/A3.
 - External Meta, Google Calendar and LLM connectivity: not verified by this audit.
