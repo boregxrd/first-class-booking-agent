@@ -29,3 +29,24 @@ Checked items are implemented and tested locally; live-provider verification is 
 - [ ] Verify actual model tone/tool behavior, real Meta sends and the complete two-prospect booking flow.
 
 Setup: [guide](docs/meta/README.md). Runtime/recovery: [operations](docs/OPERATIONS.md).
+
+## Google Calendar integration test
+
+For a live API check (the normal test suite uses a fake Calendar transport):
+
+1. Enable the Google Calendar API for the service account and share a **dedicated test calendar** with its email. Do not use the live booking calendar; this test creates a real event and leaves it for manual inspection.
+2. Add `GOOGLE_CALENDAR_ID`, `GOOGLE_CLIENT_EMAIL`, and `GOOGLE_PRIVATE_KEY` to the ignored local `.dev.vars` file.
+3. Choose an unused future slot, preferably on the hour in Dallas time, then run:
+
+   ```sh
+   set -a
+   . ./.dev.vars
+   set +a
+   GOOGLE_CALENDAR_INTEGRATION=1 \
+   GOOGLE_CALENDAR_TEST_SLOT='2026-10-06T14:00:00-05:00' \
+   npm run test:calendar:integration
+   ```
+
+4. In Google Calendar, confirm the **“DWC Free Trials — 2 prospects”** event at that time, its gym location, and the two `Integration Test` entries in its description. The test prints the event ID on success.
+
+The test refuses to modify an event if the chosen deterministic slot already exists. Choose a different unused slot for each rerun. See [operations](docs/OPERATIONS.md) for details.
