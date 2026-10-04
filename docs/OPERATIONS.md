@@ -54,6 +54,23 @@ Alerts are stored and logged; external paging destinations require a separately 
 
 Default cleanup: raw chat text is retained for 30 days; processed-turn/receipt metadata for 90 days. Pending work is preserved. Expired linking codes and proposals are removed, and completed past bookings become elapsed without implying attendance or membership. Customer/booking/consent records remain. Operator resolution should happen before failed/unknown outgoing text ages out.
 
+## Google Calendar live integration test
+
+The normal test suite uses a fake Calendar transport. For a real API check, enable the Google Calendar API in the service account's Google Cloud project, share a **dedicated test calendar** with the service account, and put that calendar ID and service-account credentials in the ignored local `.dev.vars` file. Do not point this test at the live booking calendar: it writes a real event.
+
+Choose an unused future slot (preferably on the hour in Dallas time) and run:
+
+```sh
+set -a
+. ./.dev.vars
+set +a
+GOOGLE_CALENDAR_INTEGRATION=1 \
+GOOGLE_CALENDAR_TEST_SLOT='2026-10-06T14:00:00-05:00' \
+npm run test:calendar:integration
+```
+
+The test uses the real Google OAuth and Calendar API, creates a one-person roster, updates it to two synthetic prospects, reads it back, and verifies the persisted event. It deliberately leaves the event in Calendar for manual inspection. Confirm the `DWC Free Trials — 2 prospects` title, chosen time, gym location, and two `Integration Test` entries in the description. The event ID is printed on success. Before a rerun, choose another unused slot; the test refuses to overwrite an existing event with that deterministic slot ID.
+
 ## Local verification
 
 `npm test` covers actual D1 SQL/migrations, shared roster concurrency/recovery, FIFO/inbox/outbox behavior, malformed webhooks, separate provider tokens, windows/expiry, early receipts, manual owner edits, cancellation during send, one-time linking, opt-outs, language and the two-prospect flow. Providers are mocked; real token scopes, actual Meta windows, template approvals, model tone and Google authorization still need live verification.
