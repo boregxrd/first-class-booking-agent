@@ -46,7 +46,7 @@ test('Google Calendar creates and updates a shared test roster', { skip: !enable
   const persisted = await calendar.getEvent(eventId);
   assert.ok(persisted, 'Expected the roster event to be readable from Google Calendar');
   assert.equal(persisted.status, 'confirmed');
-  assert.equal(persisted.start.dateTime, new Date(slotTime).toISOString());
+  assert.equal(Date.parse(persisted.start.dateTime), slotTime);
   assert.equal(Date.parse(persisted.end.dateTime) - Date.parse(persisted.start.dateTime), 60 * 60_000);
   assert.match(persisted.summary, /2 prospects/);
   assert.match(persisted.description ?? '', /Prospects \(2\)/);

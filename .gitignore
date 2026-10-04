@@ -4,3 +4,6 @@ dist/
 .dev.vars
 .wrangler/
 *.log
+
+# Local Google service-account credentials
+/dwc-booking-test-*.json
