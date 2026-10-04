@@ -6,6 +6,12 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"vars": {
+		"META_INSTAGRAM_ACCOUNT_ID": "17841450775304205",
+		"META_GRAPH_API_VERSION": "v26.0",
+		"META_MESSAGING_MODE": "observe",
+		"WHATSAPP_NOTIFICATIONS_ENABLED": "false"
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
