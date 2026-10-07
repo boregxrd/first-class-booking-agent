@@ -22,6 +22,7 @@ export interface Env {
   WHATSAPP_NOTIFICATIONS_ENABLED?: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
+  DIRECT_CHAT_TOKEN?: string;
 
   // Google Calendar API Bindings (Service Account)
   GOOGLE_CALENDAR_ID?: string;

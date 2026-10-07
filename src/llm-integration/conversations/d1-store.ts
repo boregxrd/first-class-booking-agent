@@ -1,6 +1,7 @@
 import { ChannelIdentity, Customer, InboundMessage } from '../../../model.js';
 import { ConversationSession, ConversationState, ConversationStore, TurnResult } from './store.js';
 import { identityKey, withLease, type Lease } from '../runtime/persistence.js';
+import { DIRECT_CHAT_ACCOUNT } from '../runtime/direct-chat.js';
 
 export class D1ConversationStore implements ConversationStore {
   constructor(private db: D1Database) {}
@@ -260,11 +261,11 @@ export class D1ConversationStore implements ConversationStore {
               JSON.stringify(result),
               timestamp
             ),
-          db.prepare(`INSERT INTO outgoing_messages
+          ...(identity.businessAccountId === DIRECT_CHAT_ACCOUNT ? [] : [db.prepare(`INSERT INTO outgoing_messages
             (id, conversation_id, channel, business_account_id, sender_id, source_message_id, text, last_inbound_at, available_at, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .bind(assistantMsgId, finalState.id, identity.channel, identity.businessAccountId, identity.senderId,
-              message.providerMessageId, result.reply, message.sentAt, timestamp, timestamp, timestamp),
+              message.providerMessageId, result.reply, message.sentAt, timestamp, timestamp, timestamp)]),
           db.prepare("UPDATE message_inbox SET state = 'processed' WHERE channel = ? AND business_account_id = ? AND provider_message_id = ?")
             .bind(identity.channel, identity.businessAccountId, message.providerMessageId),
         ]);

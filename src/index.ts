@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { createWebhookRoutes } from './llm-integration/webhooks/routes.js';
+import { createDirectChatRoutes } from './llm-integration/webhooks/direct-chat.js';
 import { handleQueue } from './llm-integration/runtime/queue.js';
 import type { Env } from './types/env.js';
 import { handleScheduled } from './runtime/scheduled.js';
@@ -17,6 +18,7 @@ app.get('/', (c) => c.text('First-Class Booking Agent (Cloudflare Worker) is run
 // ============================================================================
 
 app.route('/webhook', createWebhookRoutes());
+app.route('/test/chat', createDirectChatRoutes());
 
 // ============================================================================
 // CLOUDFLARE WORKERS HANDLERS (Fetch, Queues, Scheduled Cron)

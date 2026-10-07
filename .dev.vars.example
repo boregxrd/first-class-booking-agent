@@ -23,6 +23,8 @@ WHATSAPP_NOTIFICATIONS_ENABLED=false
 
 # OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4.1-mini
+# Optional protected direct-chat endpoint; use a random token of at least 32 bytes.
+# DIRECT_CHAT_TOKEN=your_random_test_token
 
 # Google Calendar API (service account; calendar shared with this account).
 # GOOGLE_CALENDAR_ID=your_calendar_id@group.calendar.google.com

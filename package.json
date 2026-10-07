@@ -9,7 +9,10 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit && tsc -p src/llm-integration/tests/tsconfig.json",
     "test": "tsx --test src/llm-integration/tests/*.test.ts src/calendar/*.test.ts src/bookings/*.test.ts",
-    "test:calendar:integration": "tsx --test integration-tests/google-calendar.test.ts"
+    "test:calendar:integration": "tsx --test integration-tests/google-calendar.test.ts",
+    "chat:setup": "node scripts/chat.mjs --setup",
+    "chat": "node scripts/chat.mjs",
+    "test:agent:integration": "node scripts/chat.mjs --test"
   },
   "dependencies": {
     "hono": "^4.6.14",

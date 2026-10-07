@@ -1,5 +1,6 @@
 import type { InboundMessage, Customer, ChannelIdentity } from '../../../model.js';
 import type { ConversationState } from './store.js';
+import { DIRECT_CHAT_ACCOUNT } from '../runtime/direct-chat.js';
 
 export interface ConversationControls {
   handle(message: InboundMessage, state: ConversationState, now: string): Promise<string | null>;
@@ -42,6 +43,7 @@ export class D1ConversationControls implements ConversationControls {
       return es ? 'He desactivado las confirmaciones y recordatorios por WhatsApp. Tu reserva no se cancela.' : 'WhatsApp confirmations and reminders are turned off. Your booking is unchanged.';
     }
     if (/^(link whatsapp|vincular whatsapp)$/.test(text)) {
+      if (message.identity.businessAccountId === DIRECT_CHAT_ACCOUNT) return es ? 'La vinculación con WhatsApp se prueba desde Instagram, no desde este chat de prueba.' : 'Test WhatsApp linking from Instagram, rather than this test chat.';
       if (message.identity.channel !== 'instagram' || !state.customer.whatsappPhone) {
         return es ? 'Solicita “vincular WhatsApp” desde Instagram después de confirmar tu número en la reserva.' : 'Request “link WhatsApp” from Instagram after confirming your booking phone number.';
       }

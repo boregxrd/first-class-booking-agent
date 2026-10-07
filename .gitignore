@@ -7,3 +7,4 @@ dist/
 
 # Local Google service-account credentials
 /dwc-booking-test-*.json
+/.direct-chat-token

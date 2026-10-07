@@ -7,6 +7,7 @@ import type { RosterCalendar } from '../calendar/client.js';
 import { syncSlotRoster } from '../calendar/slot-roster.js';
 import { loadSlotProspects } from './roster.js';
 import { AUTHORITATIVE_SCHEDULE, validateBookingSlot } from '../gym/schedule.js';
+import { DIRECT_CHAT_ACCOUNT } from '../llm-integration/runtime/direct-chat.js';
 
 type Action = 'book' | 'reschedule' | 'cancel';
 type MutationInput = BookTrialInput | RescheduleTrialInput | CancelTrialInput;
@@ -216,9 +217,10 @@ export class D1BookingService implements BookingService {
              WHERE b.id = ? AND b.starts_at > ? AND EXISTS (
                SELECT 1 FROM consents co WHERE co.customer_id = c.id AND co.phone = c.whatsapp_phone
                AND co.purpose = 'trial_confirmation_and_reminders' AND co.revoked_at IS NULL
+               AND co.source_business_account_id <> ?
                AND co.id = (SELECT id FROM consents WHERE customer_id = c.id ORDER BY granted_at DESC, rowid DESC LIMIT 1))
              ON CONFLICT(booking_id, booking_revision, kind) DO NOTHING`
-          ).bind(`job_${crypto.randomUUID()}`, kind, due, timestamp, timestamp, booking.id, timestamp));
+          ).bind(`job_${crypto.randomUUID()}`, kind, due, timestamp, timestamp, booking.id, timestamp, DIRECT_CHAT_ACCOUNT));
         }
       }
       await this.db.batch(statements);
