@@ -1,18 +1,34 @@
 # Setup and troubleshooting handoff
 
-Last updated: 2026-10-04. This document records the setup session, observed failures, actions taken, and unresolved checks. It contains no credential values.
+Last updated: 2026-10-07. This document records the setup session, observed failures, actions taken, and unresolved checks. It contains no credential values.
+
+## 2026-10-07 follow-up — direct chat verified
+
+### Instagram onboarding follow-up
+
+The owner confirmed control of the privacy-contact inbox, and public `/privacy` and `/data-deletion` instruction pages were deployed. The user then published the Meta app. A fresh real Instagram DM subsequently reached `/webhook`, returned HTTP 200, and logged `[Webhook observed]` with account `17841450775304205` and sender `1078653611459615`. This verifies signature acceptance for that real event; the earlier 401 is not the current observed result.
+
+Deployed test mode with `META_TEST_INSTAGRAM_SENDER_IDS=1078653611459615` (Worker version `7b6d6e4a-f7ed-494a-8043-e7e6cbc7499d`). The user's subsequent logs show a real webhook returning 200 and a `dwc-messages` queue execution completing conversation `conv_adb45418-dd75-41a5-a8cc-bc76e1cc7d5f`, with 2629 input tokens and 86 output tokens. Their Instagram screenshot confirms the reply arrived. `bookingStatus=none` is expected for an information-only question. Next: book, reschedule and cancel through Instagram and inspect the real Calendar. Token expiry remains unrecorded. WhatsApp notifications remain disabled. Earlier observe-mode descriptions below are historical.
+
+- OpenAI billing was replenished; real model calls through the deployed Worker now succeed.
+- Added protected `POST /test/chat` and terminal client (`npm run chat`), using the real conversation processor, remote D1 and configured dedicated test Calendar.
+- The live integration test passed: two prospects in one shared roster, confirmation replay without duplicate mutation, one-person reschedule, and cancellation of both prospects. Calendar assertions use fresh real API reads, not mocked responses.
+- Testing exposed model-written approval prompts without saved proposals. Corrected conflicting prompt instructions and added a processor guard for unsupported confirmation phrases. Regression tests cover correction and bounded fallback. The model still occasionally asks extra clarification questions or misinterprets UTC/Dallas conversions before correction; broader natural-conversation acceptance remains open.
+- TypeScript and all **48 local tests** passed. Direct-chat verification used Worker version `1c8cb5da-3399-4571-93bd-81fc958cfb3d`; later privacy and Instagram test-mode deployments are recorded above.
+- Cancelled all synthetic bookings, including those from interrupted runs. Remote D1 confirmed **0 active direct-chat bookings, 0 Meta outgoing messages, 0 WhatsApp jobs**. Empty shared Calendar events remain by design.
+- `DIRECT_CHAT_TOKEN` is installed as a Worker secret. Its local copy is `.direct-chat-token`, ignored by git. See [DIRECT_CHAT.md](DIRECT_CHAT.md).
+- The synchronous backend path is live-verified. The later Instagram follow-up also verifies real inbound signatures, queued processing and an actual reply. Queue failure recovery with real traffic, WhatsApp templates/receipts, broader conversational acceptance and owner policy approval remain. The historical session below describes the earlier failures.
 
 ## Current situation — start here
 
 - The Worker is deployed; its root health endpoint works.
 - D1, the message queue, dead-letter queue, and every-minute cron are configured. All four database migrations were applied remotely.
 - Google service-account authentication and real Calendar roster creation/update/read-back passed a live test.
-- OpenAI credentials are installed, but the last real model test failed with an exhausted API credit balance. Successful model generation is not yet verified.
-- The Instagram account is professional, the Meta app is in **Development** mode, and the account-level `messages` subscription was confirmed through the API.
-- Meta dashboard Test requests reach the callback. User-supplied structured logs also show Meta POST requests reaching it and receiving **HTTP 401**.
-- In the current handler, HTTP 401 means signature verification failed. Determining the correct signing secret remains unresolved.
-- The latest user report is that the account still did not answer. No new structured log was provided after the advice to check the separate Instagram App Secret, so the response status after that step is unknown.
-- **The deployed configuration is still `META_MESSAGING_MODE=observe`. No AI processing or automatic replies are expected in this mode, even after incoming webhooks work.** WhatsApp notifications are disabled.
+- OpenAI credentials are installed and successful generation/tool use was verified in the 2026-10-07 direct-chat follow-up above; the earlier credit failure is documented below.
+- The Instagram account is professional, the Meta app is now **Published**, and account-level `messages` subscription is enabled.
+- Real Instagram DMs reach the callback with **HTTP 200** and valid signatures. The earlier 401 events below are historical.
+- A real DM was processed through Cloudflare Queues and OpenAI, and the user confirmed receiving the AI reply in Instagram.
+- **The deployed configuration is `META_MESSAGING_MODE=test`, restricted to sender `1078653611459615`.** WhatsApp notifications are disabled.
 
 Do not equate a working health check, a dashboard Test, an account subscription, or a successful Calendar test with a verified end-to-end conversation.
 

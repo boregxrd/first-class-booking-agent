@@ -1,6 +1,6 @@
 # TODO
 
-Checked items are implemented and tested locally; live-provider verification is still required.
+Checked implementation items are tested locally. Explicit live checks below were verified on 2026-10-07. Instagram inbound delivery, queued model processing and a real reply were also verified; broader conversational acceptance and live Instagram booking checks remain.
 
 ## Booking service — friend
 
@@ -10,8 +10,9 @@ Checked items are implemented and tested locally; live-provider verification is 
 - [x] Notification retries, lease recovery, delivery tracking and cancellation-during-send protection.
 - [x] Local tests for Calendar/database failures, owner edits, consent and out-of-order receipts.
 - [ ] Owner: approve the display-only Calendar policy, lead time, booking horizon, closures, repeat-trial rules and reminder timing.
-- [ ] Set up Google Calendar credentials, WhatsApp number and approved templates.
-- [ ] Test real shared rosters, rescheduling, cancellation and per-person reminders.
+- [x] Set up Google Calendar credentials and verify real Calendar API access.
+- [x] Test deployed D1 → real shared Calendar rosters, rescheduling and cancellation through direct chat.
+- [ ] Set up WhatsApp number/credentials and approved templates; verify per-person confirmations/reminders and receipts.
 
 ## Agent and credentials — you
 
@@ -22,13 +23,17 @@ Checked items are implemented and tested locally; live-provider verification is 
 - [x] Token-expiry checks/alerts, secure one-time cross-channel linking, opt-outs and language commands.
 - [x] History retention, structured usage/error logs, scheduled recovery and operational alerts.
 - [x] Local concurrency/failure tests and two-prospect end-to-end flow with mocked providers.
-- [ ] Create Cloudflare account/resources, replace placeholder DB ID, apply migrations and deploy.
-- [ ] Add OpenAI/Meta credentials and token expiry dates; have your brother authorize Instagram.
-- [ ] Connect webhooks; observe a real DM, then enable only your sender IDs for testing.
+- [x] Create Cloudflare account/resources, replace placeholder DB ID, apply migrations and deploy.
+- [x] Install OpenAI credentials and verify successful real model/tool calls through the deployed Worker.
+- [x] Add protected direct chat and pass live two-prospect booking/reschedule/cancel/replay checks.
+- [ ] Complete Meta credentials/token-expiry configuration and authorize the gym's actual Instagram account.
+- [x] Connect webhooks; observe a real DM, then enable only your sender IDs for testing.
+- [x] Verify a real Instagram DM → Cloudflare Queue → OpenAI → Instagram reply on the published test app.
 - [ ] Owner: confirm missing FAQs and coordinate the existing bot's testing/cutover.
-- [ ] Verify actual model tone/tool behavior, real Meta sends and the complete two-prospect booking flow.
+- [ ] Complete conversational acceptance (tone, dates/timezones and clarification behavior) and live Instagram booking/reschedule/cancel checks; verify the Instagram-to-WhatsApp flow when WhatsApp is configured.
 
 Setup: [guide](docs/meta/README.md). Runtime/recovery: [operations](docs/OPERATIONS.md).
+Direct chat: `npm run chat`. Live agent check: `npm run test:agent:integration`. See [direct-chat guide](docs/DIRECT_CHAT.md).
 
 ## Google Calendar integration test
 

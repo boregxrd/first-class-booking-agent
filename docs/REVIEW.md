@@ -1,5 +1,7 @@
 # Shared hourly roster implementation
 
+**Live verification update (2026-10-07):** Cloudflare resources/deployment and Google credentials are configured. The protected direct-chat test passed real OpenAI → deployed Worker → remote D1 → shared Calendar booking, reschedule, cancellation and replay checks. See [DIRECT_CHAT.md](DIRECT_CHAT.md) and the latest [setup handoff](SETUP_TROUBLESHOOTING.md). Older setup-status statements below describe the initial implementation review.
+
 ## Current design
 
 - **One Google Calendar event per one-hour slot**, identified by a hash of its canonical UTC start time. Equivalent Dallas-offset/UTC timestamps use the same ID.
