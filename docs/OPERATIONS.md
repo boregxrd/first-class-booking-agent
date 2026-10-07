@@ -43,6 +43,8 @@ Delivery progresses `pending → leased → sending → accepted`, with `failed`
 
 ## Monitoring and retention
 
+Public Meta app settings pages are served by the Worker at `/privacy` and `/data-deletion`. Privacy/deletion requests go to the owner-monitored `dallaswellnessclubweb@gmail.com` inbox and require manual operator handling. Use the **Data deletion instructions URL** option in Meta, not the deletion-callback option; no automatic deletion callback is implemented. Verify the requester, resolve pending work and notification jobs, and remove related application records and Calendar roster information together. Removing only a Calendar entry is insufficient because the app can rebuild it from D1. Review provider-held copies separately. The public policy explains that chat-history cleanup is normally 30 days, processed-turn records (including reply copies) can last 90 days, and customer/booking/consent records have no automatic expiry.
+
 Worker logs contain operational IDs, statuses and model token counts, not raw chat bodies/tokens. Cloudflare observability is enabled. Inspect `operational_alerts` for open errors, `message_inbox` for failed turns, outgoing/notification jobs for unknown/failed delivery, and `calendar_slot_health` for quarantined classes. Example after login:
 
 ```sh
