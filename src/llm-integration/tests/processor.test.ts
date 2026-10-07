@@ -102,6 +102,26 @@ test('yes without a pending proposal cannot authorize a booking', async () => {
   assert.equal(f.operations.length, 0);
 });
 
+test('model-written confirmation prompts are replaced by a persisted proposal before asking approval', async () => {
+  const f = fixture([reply('Please reply yes cancel to proceed.'), propose()]);
+  const result = await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
+  assert.equal(result.bookingStatus, 'awaiting_confirmation');
+  assert.match(result.reply, /sí confirmo/);
+  assert.doesNotMatch(result.reply, /yes cancel/);
+  assert.ok(f.session.state.proposal);
+  assert.equal(f.operations.length, 0);
+  assert.ok(f.requests[1]!.some((m) => m.role === 'system' && m.content.includes('No proposal has been saved')));
+});
+
+test('repeated unsupported approval prompts never escape or authorize a booking', async () => {
+  const f = fixture(Array.from({ length: 4 }, () => reply('Reply sí confirmo to cancel.')));
+  const result = await f.process(input('details', 'Quiero cancelar'));
+  assert.equal(result.bookingStatus, 'none');
+  assert.doesNotMatch(result.reply, /sí confirmo/);
+  assert.equal(f.session.state.proposal, null);
+  assert.equal(f.operations.length, 0);
+});
+
 test('Instagram-only contact books after confirmation without granting WhatsApp consent', async () => {
   const f = fixture([propose({ name: 'Ana', phone: null, instagramHandle: '@ana.fit', startsAt })]);
   const proposal = await f.process(input('details', 'Soy Ana, mi Instagram es @ana.fit, quiero el lunes a las 8'));
