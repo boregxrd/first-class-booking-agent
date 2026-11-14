@@ -46,17 +46,17 @@ export async function startConnection(env: Env, provider: 'google' | 'instagram'
 
 export async function saveMessagingConnection(env: Env, platform: Platform, distribuidoraId: string, account: ConnectedProviderAccount) {
   if (!env.DB) throw new Error('Database required');
-  return withLease(env.DB, `connect:${platform}:${account.providerAccountId}`, async () => {
+  return withLease(env.DB, `connect:${platform}:${account.providerAccountId}`, async (lease) => {
     if (!(await new AccountStore(env.DB!).get(distribuidoraId))?.active) throw new Error('Active distribuidora required');
     const previous = await env.DB!.prepare('SELECT id,distribuidora_id FROM social_accounts WHERE platform=? AND provider_account_id=?')
       .bind(platform, account.providerAccountId).first<{ id: string; distribuidora_id: string }>();
     if (previous && previous.distribuidora_id !== distribuidoraId) throw new Error('Account already belongs to another distribuidora; explicit reassignment is required');
     const id = previous?.id ?? `${platform}:${account.providerAccountId}`, credentialId = `social:${id}`, now = new Date().toISOString();
-    await vaultFor(env).put(credentialId, account.credentials);
-    await env.DB!.prepare(`INSERT INTO social_accounts (id,distribuidora_id,platform,provider_account_id,handle,status,credential_id,token_expires_at,created_at,updated_at)
+    await vaultFor(env).put(credentialId, account.credentials, lease.fence);
+    await env.DB!.batch([lease.fence(), env.DB!.prepare(`INSERT INTO social_accounts (id,distribuidora_id,platform,provider_account_id,handle,status,credential_id,token_expires_at,created_at,updated_at)
       VALUES (?,?,?,?,?,'connected',?,?,?,?) ON CONFLICT(platform,provider_account_id) DO UPDATE SET
       handle=excluded.handle,status='connected',credential_id=excluded.credential_id,token_expires_at=excluded.token_expires_at,updated_at=excluded.updated_at`)
-      .bind(id, distribuidoraId, platform, account.providerAccountId, account.handle, credentialId, account.credentials.expiresAt ?? null, now, now).run();
+      .bind(id, distribuidoraId, platform, account.providerAccountId, account.handle, credentialId, account.credentials.expiresAt ?? null, now, now)]);
     return id;
   });
 }
@@ -79,12 +79,14 @@ export async function completeConnection(env: Env, provider: 'google' | 'instagr
     const user = await json(await request('https://openidconnect.googleapis.com/v1/userinfo', {
       headers: { Authorization: `Bearer ${validated.access_token}` }, signal: AbortSignal.timeout(15_000) }));
     if (user.email_verified !== true || typeof user.email !== 'string' || !env.GOOGLE_OWNER_EMAIL || user.email.toLowerCase() !== env.GOOGLE_OWNER_EMAIL.toLowerCase()) throw new Error('Only the configured gym Google account may authorize calendars');
-    const prior = await vaultFor(env).get('google-owner');
-    const refreshToken = validated.refresh_token ?? (prior && prior.email === user.email ? prior.refreshToken : undefined);
-    if (!refreshToken) throw new Error('Offline Google consent is required');
-    await vaultFor(env).put('google-owner', { accessToken: validated.access_token, refreshToken,
-      expiresAt: new Date(Date.now() + validated.expires_in * 1000).toISOString(), email: user.email, subject: user.sub,
-      scopes: validated.scope.split(' ') });
+    await withLease(env.DB, 'google-owner-token', async (lease) => {
+      const prior = await vaultFor(env).get('google-owner');
+      const refreshToken = validated.refresh_token ?? (prior && prior.email === user.email ? prior.refreshToken : undefined);
+      if (!refreshToken) throw new Error('Offline Google consent is required');
+      await vaultFor(env).put('google-owner', { accessToken: validated.access_token, refreshToken,
+        expiresAt: new Date(Date.now() + validated.expires_in * 1000).toISOString(), email: user.email, subject: user.sub,
+        scopes: validated.scope.split(' ') }, lease.fence);
+    });
     return;
   }
   if (!row.distribuidora_id) throw new Error('Missing distribuidora');

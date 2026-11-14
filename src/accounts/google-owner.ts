@@ -8,7 +8,7 @@ export class OwnerGoogleError extends Error {
 
 export async function ownerGoogleToken(env: Env): Promise<string> {
   if (!env.DB) throw new Error('Database required');
-  return withLease(env.DB, 'google-owner-token', async () => {
+  return withLease(env.DB, 'google-owner-token', async (lease) => {
     const vault = vaultFor(env), value = await vault.get('google-owner');
     if (!value || !env.GOOGLE_OWNER_EMAIL || value.email?.toLowerCase() !== env.GOOGLE_OWNER_EMAIL.toLowerCase()) throw new Error('Gym Google account must be authorized');
     if (value.expiresAt && Date.parse(value.expiresAt) > Date.now() + 60_000) return value.accessToken;
@@ -18,7 +18,7 @@ export async function ownerGoogleToken(env: Env): Promise<string> {
     if (!response.ok) throw new OwnerGoogleError(response.status);
     const data = await response.json() as { access_token?: string; expires_in?: number };
     if (!data.access_token || !data.expires_in) throw new Error('Invalid Google refresh response');
-    await vault.put('google-owner', { ...value, accessToken: data.access_token, expiresAt: new Date(Date.now() + data.expires_in * 1000).toISOString() });
+    await vault.put('google-owner', { ...value, accessToken: data.access_token, expiresAt: new Date(Date.now() + data.expires_in * 1000).toISOString() }, lease.fence);
     return data.access_token;
   });
 }

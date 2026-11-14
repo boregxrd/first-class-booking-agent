@@ -13,7 +13,7 @@ export async function maintainConnections(env: Env, now: string, request: typeof
     .all<{ id: string; credential_id: string | null; provider_account_id: string }>();
   for (const row of rows.results) {
     try {
-      await withLease(env.DB, `connect:instagram:${row.provider_account_id}`, async () => {
+      await withLease(env.DB, `connect:instagram:${row.provider_account_id}`, async (lease) => {
         if (!row.credential_id) return;
         const vault = vaultFor(env), value = await vault.get(row.credential_id);
         if (!value) throw new Error('Missing account credential');
@@ -26,8 +26,8 @@ export async function maintainConnections(env: Env, now: string, request: typeof
           throw new Error('Account renewal requires retry or authorization');
         }
         const expiresAt = new Date(Date.parse(now) + data.expires_in * 1000).toISOString();
-        await vault.put(row.credential_id, { ...value, accessToken: data.access_token, expiresAt });
-        await env.DB!.prepare('UPDATE social_accounts SET token_expires_at=?,updated_at=? WHERE id=?').bind(expiresAt, now, row.id).run();
+        await vault.put(row.credential_id, { ...value, accessToken: data.access_token, expiresAt }, lease.fence);
+        await env.DB!.batch([lease.fence(), env.DB!.prepare('UPDATE social_accounts SET token_expires_at=?,updated_at=? WHERE id=?').bind(expiresAt, now, row.id)]);
         await resolveAlert(env.DB!, 'account_refresh_failed', row.id);
       });
     } catch {

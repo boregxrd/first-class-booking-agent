@@ -48,6 +48,7 @@ export async function bootstrapLegacyAccounts(env: Env) {
     const prior = await env.DB.prepare('SELECT id,distribuidora_id FROM social_accounts WHERE platform=? AND provider_account_id=?').bind(platform, accountId).first<{ id: string; distribuidora_id: string }>();
     if (prior) {
       if (prior.distribuidora_id !== 'dwc') throw new Error('Legacy account belongs to another profile');
+      if (platform === 'whatsapp' && !await store.setting('reminder_sender_account_id')) await store.setSetting('reminder_sender_account_id', prior.id);
       continue;
     }
     await vault.put(id, { accessToken: token, ...(expiry ? { expiresAt: expiry } : {}) });

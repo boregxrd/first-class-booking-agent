@@ -22,13 +22,17 @@ export class CredentialVault {
     if (bytes.length !== 32) throw new Error('Credential encryption key must be 32 bytes');
     return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
   }
-  async put(id: string, input: CredentialPayload) {
+  private async encrypt(id: string, input: CredentialPayload) {
     const payload = payloadSchema.parse(input), iv = crypto.getRandomValues(new Uint8Array(12));
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(`dwc:1:${id}`) },
       await this.key(this.activeKey), new TextEncoder().encode(JSON.stringify(payload)));
-    const envelope = JSON.stringify({ v: 1, kid: this.activeKey, iv: encode(iv), ciphertext: encode(new Uint8Array(ciphertext)) });
-    await this.db.prepare('INSERT INTO account_credentials (id,encrypted_payload,updated_at) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET encrypted_payload=excluded.encrypted_payload,updated_at=excluded.updated_at')
-      .bind(id, envelope, new Date().toISOString()).run();
+    return JSON.stringify({ v: 1, kid: this.activeKey, iv: encode(iv), ciphertext: encode(new Uint8Array(ciphertext)) });
+  }
+  async put(id: string, input: CredentialPayload, fence?: () => D1PreparedStatement) {
+    const envelope = await this.encrypt(id, input);
+    const statement = this.db.prepare('INSERT INTO account_credentials (id,encrypted_payload,updated_at) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET encrypted_payload=excluded.encrypted_payload,updated_at=excluded.updated_at')
+      .bind(id, envelope, new Date().toISOString());
+    await this.db.batch([...(fence ? [fence()] : []), statement]);
   }
   async get(id: string): Promise<CredentialPayload | null> {
     const row = await this.db.prepare('SELECT encrypted_payload FROM account_credentials WHERE id=?').bind(id).first<{ encrypted_payload: string }>();
@@ -38,5 +42,13 @@ export class CredentialVault {
       await this.key(envelope.kid), decode(envelope.ciphertext));
     return payloadSchema.parse(JSON.parse(new TextDecoder().decode(plaintext)));
   }
-  async rotate(id: string) { const value = await this.get(id); if (value) await this.put(id, value); }
+  async rotate(id: string) {
+    const before = await this.db.prepare('SELECT encrypted_payload FROM account_credentials WHERE id=?').bind(id).first<{ encrypted_payload: string }>();
+    if (!before) return;
+    const value = await this.get(id);
+    if (!value) return;
+    const result = await this.db.prepare('UPDATE account_credentials SET encrypted_payload=?,updated_at=? WHERE id=? AND encrypted_payload=?')
+      .bind(await this.encrypt(id, value), new Date().toISOString(), id, before.encrypted_payload).run();
+    if (!result.meta.changes) throw new Error('Credential changed during rotation; retry this record');
+  }
 }
