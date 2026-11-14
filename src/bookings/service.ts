@@ -31,6 +31,8 @@ export class D1BookingService implements BookingService {
     private readonly db: D1Database,
     private readonly calendar: RosterCalendar | null,
     private readonly clock: () => string = () => new Date().toISOString(),
+    private readonly routing: { distribuidoraId?: string; socialAccountId?: string; originChannel?: string; originHandle?: string | null;
+      calendarForId?: (id: string) => RosterCalendar | null } = {},
   ) {}
 
   async getClassSchedule(): Promise<ClassSchedule> { return AUTHORITATIVE_SCHEDULE; }
@@ -113,7 +115,8 @@ export class D1BookingService implements BookingService {
       if (existing.revision !== (input as CancelTrialInput).expectedRevision || existing.status !== 'confirmed') {
         return failed('revision_conflict', 'Only the current confirmed booking can be changed.');
       }
-      if (existing.calendar?.calendarId !== this.calendar.configuredCalendarId) {
+      if (existing.calendar?.calendarId !== this.calendar.configuredCalendarId
+        && !this.routing.calendarForId?.(existing.calendar?.calendarId ?? '')) {
         return failed('dependency_unavailable', 'The booking belongs to another calendar.');
       }
     }
@@ -151,16 +154,22 @@ export class D1BookingService implements BookingService {
       const cutoff = new Date(Date.parse(now) - 30 * 24 * 60 * 60_000).toISOString();
       const handle = customer!.instagram_handle?.replace(/^@/, '').toLowerCase() ?? null;
       statements.push(this.db.prepare(
-        `INSERT INTO bookings (id, customer_id, starts_at, ends_at, time_zone, status, revision, calendar_id, created_at, updated_at)
-         SELECT ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?
+        `INSERT INTO bookings (id, customer_id, starts_at, ends_at, time_zone, status, revision, calendar_id, distribuidora_id, social_account_id, origin_channel, origin_handle, created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?
          WHERE NOT EXISTS (
            SELECT 1 FROM bookings prior JOIN customers prior_customer ON prior_customer.id = prior.customer_id
            WHERE prior.starts_at >= ? AND prior.starts_at < ? AND prior.status IN ('confirmed', 'elapsed')
              AND (prior.customer_id = ? OR (? IS NOT NULL AND prior_customer.whatsapp_phone = ?)
                OR (? IS NOT NULL AND LOWER(REPLACE(prior_customer.instagram_handle, '@', '')) = ?))
-         )`
-      ).bind(bookingId, context.customerId, startsAt, endsAt, GYM_TIME_ZONE, this.calendar.configuredCalendarId, now, now,
-        cutoff, now, context.customerId, customer!.whatsapp_phone, customer!.whatsapp_phone, handle, handle));
+          ) AND NOT EXISTS (
+            SELECT 1 FROM bookings active JOIN customers owner ON owner.id=active.customer_id
+            WHERE active.status IN ('pending','confirmed') AND (active.customer_id=? OR (? IS NOT NULL AND (
+              (? IS NOT NULL AND owner.whatsapp_phone=?) OR (? IS NOT NULL AND LOWER(REPLACE(owner.instagram_handle,'@',''))=?))))
+          )`
+       ).bind(bookingId, context.customerId, startsAt, endsAt, GYM_TIME_ZONE, this.calendar.configuredCalendarId,
+         this.routing.distribuidoraId ?? null, this.routing.socialAccountId ?? null, this.routing.originChannel ?? null, this.routing.originHandle ?? null, now, now,
+         cutoff, now, context.customerId, customer!.whatsapp_phone, customer!.whatsapp_phone, handle, handle,
+         context.customerId, this.routing.socialAccountId ?? null, customer!.whatsapp_phone, customer!.whatsapp_phone, handle, handle));
     }
     // Claim before updating an existing booking. The partial unique index blocks a
     // competing mutation for this customer, including another create during cancellation.
@@ -190,7 +199,9 @@ export class D1BookingService implements BookingService {
     try {
       const results = await this.db.batch(statements);
       if (action === 'book' && !results[0]?.meta.changes) {
-        return failed('trial_not_eligible', 'A confirmed trial booking already exists for this contact within the last 30 days.');
+        return await this.hasRecentTrial(context, { phone: customer?.whatsapp_phone ?? null, instagramHandle: customer?.instagram_handle ?? null })
+          ? failed('trial_not_eligible', 'A confirmed trial booking already exists for this contact within the last 30 days.')
+          : failed('already_booked', 'An active booking already exists for this contact. Its attribution has not changed.');
       }
     }
     catch (error) {
@@ -208,7 +219,11 @@ export class D1BookingService implements BookingService {
   }
 
   private async synchronize(operation: Operation): Promise<BookingResult> {
-    if (!this.calendar) return pending(operation);
+    const destination = await this.db.prepare('SELECT calendar_id FROM bookings WHERE id=? AND customer_id=?')
+      .bind(operation.booking_id, operation.customer_id).first<{ calendar_id: string | null }>();
+    const calendar = destination?.calendar_id
+      ? this.routing.calendarForId?.(destination.calendar_id) ?? (this.calendar?.configuredCalendarId === destination.calendar_id ? this.calendar : null) : null;
+    if (!calendar) return pending(operation);
     const token = crypto.randomUUID();
     const now = this.clock();
     const claimed = await this.db.prepare(
@@ -221,7 +236,7 @@ export class D1BookingService implements BookingService {
       return current?.status === 'succeeded' ? JSON.parse(current.result_json) : pending(operation);
     }
     try {
-      const calendarId = this.calendar.configuredCalendarId;
+      const calendarId = calendar.configuredCalendarId;
       for (const startsAt of JSON.parse(operation.affected_slots) as string[]) {
         const renewedAt = this.clock();
         const renewed = await this.db.prepare(
@@ -229,7 +244,7 @@ export class D1BookingService implements BookingService {
            AND status = 'pending' AND lease_token = ? AND lease_expires_at > ?`
         ).bind(new Date(Date.parse(renewedAt) + 10 * 60_000).toISOString(), operation.customer_id, operation.operation_key, token, renewedAt).run();
         if (!renewed.meta.changes) throw new Error('Booking synchronization lease expired');
-        const event = await syncSlotRoster(this.calendar, startsAt, () => loadSlotProspects(this.db, calendarId, startsAt));
+        const event = await syncSlotRoster(calendar, startsAt, () => loadSlotProspects(this.db, calendarId, startsAt));
         await this.db.prepare('UPDATE bookings SET event_id = ?, calendar_etag = ? WHERE calendar_id = ? AND starts_at = ?')
           .bind(event.id, event.etag, calendarId, startsAt).run();
       }
@@ -275,15 +290,15 @@ export class D1BookingService implements BookingService {
     } catch {
       // Durable desired roster remains in D1. Same operation (or cron) will rebuild
       // affected slots; no new booking ID and no blind re-append of a prospect.
-      await this.db.prepare('UPDATE booking_operations SET lease_token = NULL, lease_expires_at = NULL WHERE customer_id = ? AND operation_key = ? AND lease_token = ?')
-        .bind(operation.customer_id, operation.operation_key, token).run();
+      await this.db.prepare('UPDATE booking_operations SET lease_token = NULL, lease_expires_at = NULL,updated_at=? WHERE customer_id = ? AND operation_key = ? AND lease_token = ?')
+        .bind(this.clock(), operation.customer_id, operation.operation_key, token).run();
       return pending(operation);
     }
   }
 
   async reconcilePendingOperations(limit = 20): Promise<void> {
-    const rows = await this.db.prepare("SELECT * FROM booking_operations WHERE status = 'pending' ORDER BY created_at LIMIT ?")
-      .bind(limit).all<Operation>();
+    const rows = await this.db.prepare("SELECT * FROM booking_operations WHERE status = 'pending' AND (lease_token IS NULL OR lease_expires_at < ?) ORDER BY updated_at,created_at LIMIT ?")
+      .bind(this.clock(), limit).all<Operation>();
     for (const operation of rows.results) await this.synchronize(operation);
   }
 }

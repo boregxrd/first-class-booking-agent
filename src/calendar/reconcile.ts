@@ -22,8 +22,9 @@ export async function inspectCalendarSlot(db: D1Database, calendar: RosterCalend
     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(calendar_id, starts_at) DO UPDATE SET event_id = excluded.event_id,
     state = excluded.state, reason = excluded.reason, checked_at = excluded.checked_at`)
     .bind(calendar.configuredCalendarId, startsAt, eventId, reason ? 'blocked' : 'healthy', reason, now).run();
-  if (reason) await alert(db, 'calendar_slot_blocked', eventId, reason, now);
-  else await resolveAlert(db, 'calendar_slot_blocked', eventId);
+  const resource = JSON.stringify([calendar.configuredCalendarId, eventId]);
+  if (reason) await alert(db, 'calendar_slot_blocked', resource, reason, now);
+  else await resolveAlert(db, 'calendar_slot_blocked', resource);
   return !reason;
 }
 
