@@ -5,12 +5,14 @@ import { dispatchOutbox } from '../llm-integration/runtime/outbox.js';
 import { alert, resolveAlert } from '../llm-integration/runtime/persistence.js';
 import { maintainState } from './maintenance.js';
 import { recoverDeliveries } from '../llm-integration/runtime/delivery.js';
+import { maintainConnections } from '../accounts/maintenance.js';
 
 export async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
   if (!env.DB) throw new Error('D1 binding DB is required');
   const services = createServices(env);
   const now = new Date(event.scheduledTime).toISOString();
   const tasks: Array<[string, () => Promise<unknown>]> = [
+    ['connections', () => maintainConnections(env, now)],
     ['delivery-recovery', async () => { await recoverDeliveries(env.DB!, 'outgoing_messages', now); await recoverDeliveries(env.DB!, 'notification_jobs', now); }],
     ['bookings', () => services.bookings.reconcilePendingOperations(1)],
     ['calendar', () => services.reconcileCalendars(now)],
