@@ -61,6 +61,7 @@ export class GoogleOwnerCalendars implements CalendarProvisioner {
     return matches[0]?.id ?? null;
   }
   async share(calendarId: string, email: string, role: 'reader' | 'writer', notify: boolean) {
+    if (email.toLowerCase() === this.env.GOOGLE_OWNER_EMAIL?.toLowerCase() && role === 'reader') return; // Never downgrade the data owner's access.
     const path = `calendars/${encodeURIComponent(calendarId)}/acl`;
     const existing = (await this.list(path)).find((entry) => entry.scope?.type === 'user' && entry.scope.value?.toLowerCase() === email.toLowerCase());
     if (existing?.role === role) return;

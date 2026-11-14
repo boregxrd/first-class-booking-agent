@@ -32,7 +32,7 @@ export async function startConnection(env: Env, provider: 'google' | 'instagram'
   if (provider === 'instagram' && (!distribuidoraId || !(await new AccountStore(env.DB).get(distribuidoraId))?.active)) throw new Error('Active distribuidora required');
   const url = new URL(provider === 'google' ? 'https://accounts.google.com/o/oauth2/v2/auth' : 'https://www.instagram.com/oauth/authorize');
   url.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', state,
-    scope: provider === 'google' ? 'openid email https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.acls https://www.googleapis.com/auth/calendar.events'
+    scope: provider === 'google' ? 'openid email https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.acls https://www.googleapis.com/auth/calendar.events'
       : 'instagram_business_basic,instagram_business_manage_messages' }).toString();
   if (provider === 'google') {
     url.searchParams.set('access_type', 'offline'); url.searchParams.set('prompt', 'consent');
@@ -73,7 +73,7 @@ export async function completeConnection(env: Env, provider: 'google' | 'instagr
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, code_verifier: row.verifier,
         client_id: env.GOOGLE_OAUTH_CLIENT_ID!, client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET! }) }));
     const validated = z.object({ access_token: z.string().min(1), refresh_token: z.string().optional(), expires_in: z.number().positive(), scope: z.string() }).parse(token);
-    for (const required of ['calendar.calendars', 'calendar.acls', 'calendar.events']) {
+    for (const required of ['calendar.calendars', 'calendar.calendarlist.readonly', 'calendar.acls', 'calendar.events']) {
       if (!validated.scope.split(' ').includes(`https://www.googleapis.com/auth/${required}`)) throw new Error('Required calendar permission was not granted');
     }
     const user = await json(await request('https://openidconnect.googleapis.com/v1/userinfo', {

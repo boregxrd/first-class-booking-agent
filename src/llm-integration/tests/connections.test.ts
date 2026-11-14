@@ -30,7 +30,7 @@ test('Google OAuth binds expiring one-use state, PKCE and exact gym identity', a
       if (String(input).includes('/token')) {
         assert.ok(String(options?.body).includes('code_verifier='));
         return Response.json({ access_token: 'access', refresh_token: 'refresh', expires_in: 3600,
-          scope: ['calendar.calendars', 'calendar.acls', 'calendar.events'].map((scope) => `https://www.googleapis.com/auth/${scope}`).join(' ') });
+          scope: ['calendar.calendars', 'calendar.calendarlist.readonly', 'calendar.acls', 'calendar.events'].map((scope) => `https://www.googleapis.com/auth/${scope}`).join(' ') });
       }
       return Response.json({ email: 'owner@example.com', email_verified: true, sub: 'owner' });
     };

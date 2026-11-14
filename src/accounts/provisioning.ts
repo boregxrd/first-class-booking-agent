@@ -7,6 +7,7 @@ export async function provisionCalendar(db: D1Database, id: string, serviceAccou
   return withLease(db, `provision:${id}`, async (lease) => {
     const store = new AccountStore(db), profile = await store.get(id);
     if (!profile || !profile.active) throw new Error('Active distribuidora required');
+    if (profile.email.toLowerCase() === serviceAccountEmail.toLowerCase()) throw new Error('Distribuidora email must differ from the bot service account');
     if (profile.calendar_setup_status === 'ready') return profile;
     const save = async (status: string, calendarId = profile.google_calendar_id) => {
       await db.batch([lease.fence(), db.prepare('UPDATE distribuidoras SET calendar_setup_status=?,google_calendar_id=?,calendar_view_url=?,updated_at=? WHERE id=?')
