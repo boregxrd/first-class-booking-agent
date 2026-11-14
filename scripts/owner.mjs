@@ -1,0 +1,43 @@
+import { randomBytes } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+
+const path = new URL('../.owner-credentials.json', import.meta.url);
+const base = process.env.OWNER_PORTAL_URL ?? 'https://first-class-booking-agent.dallaswellnessclubweb.workers.dev';
+const cwd = new URL('../', import.meta.url);
+let local = await readFile(path, 'utf8').then(JSON.parse).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+
+function wrangler(args, input) {
+  const result = spawnSync('npx', ['wrangler', ...args], { cwd, input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  if (result.status !== 0) throw new Error(`Wrangler operation failed. Check Cloudflare login/configuration. ${result.stderr}`);
+  return result.stdout;
+}
+
+if (process.argv.includes('--setup')) {
+  const secrets = JSON.parse(wrangler(['secret', 'list']));
+  if (!local) {
+    if (secrets.some((secret) => ['ACCOUNT_CREDENTIAL_KEYS', 'ADMIN_API_TOKEN'].includes(secret.name))) {
+      throw new Error('Owner secrets already exist remotely. Restore the original private backup; do not replace encryption keys with new random keys.');
+    }
+    local = { adminToken: randomBytes(32).toString('hex'), keyring: { v1: randomBytes(32).toString('base64') } };
+    await writeFile(path, JSON.stringify(local), { mode: 0o600, flag: 'wx' });
+  }
+  if (typeof local.adminToken !== 'string' || local.adminToken.length < 32 || typeof local.keyring?.v1 !== 'string' || Buffer.from(local.keyring.v1, 'base64').length !== 32) {
+    throw new Error('Invalid owner backup. Restore it rather than generating replacement credentials.');
+  }
+  if (!secrets.some((secret) => secret.name === 'ADMIN_API_TOKEN')) wrangler(['secret', 'put', 'ADMIN_API_TOKEN'], local.adminToken);
+  if (!secrets.some((secret) => secret.name === 'ACCOUNT_CREDENTIAL_KEYS')) wrangler(['secret', 'put', 'ACCOUNT_CREDENTIAL_KEYS'], JSON.stringify(local.keyring));
+  console.log('Owner secrets installed if missing; existing remote secrets were preserved. Private backup: .owner-credentials.json (ignored, mode 0600). Back it up securely. No credential values are printed.');
+} else {
+  if (!local?.adminToken) throw new Error('Run node scripts/owner.mjs --setup first, or restore the private owner backup.');
+  const command = process.argv[2] ?? '--status';
+  const routes = { '--status': ['/overview'], '--bootstrap': ['/bootstrap', {}], '--google': ['/connections/start', { provider: 'google' }] };
+  if (!routes[command]) throw new Error('Use --setup, --status, --bootstrap or --google. The Google command prints only an expiring authorization link.');
+  const [route, body] = routes[command];
+  const response = await fetch(new URL(`/admin/api${route}`, base), { method: body ? 'POST' : 'GET',
+    headers: { Authorization: `Bearer ${local.adminToken}`, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60_000) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(`Owner request failed (${response.status}): ${data.error ?? 'check configuration'}`);
+  console.log(JSON.stringify(data, null, 2));
+}
