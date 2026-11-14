@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AccountStore } from '../../accounts/store.js';
 import { saveMessagingConnection } from '../../accounts/connections.js';
-import { reminderEnvironment } from '../../accounts/runtime.js';
+import { bootstrapLegacyAccounts, reminderEnvironment } from '../../accounts/runtime.js';
 import { D1BookingService } from '../../bookings/service.js';
 import { D1NotificationScheduler } from '../../notifications/scheduler.js';
 import { MetaTextSender } from '../../channels/outbound.js';
@@ -150,5 +150,22 @@ test('signed webhook routing accepts each registered destination and never accep
     assert.equal((await send('a', 'four')).status, 200);
     const stored = await db.prepare('SELECT business_account_id FROM message_inbox ORDER BY seq').all();
     assert.deepEqual(stored.results, [{ business_account_id: 'a' }, { business_account_id: 'b' }]);
+  } finally { await dispose(); }
+});
+
+test('legacy bootstrap is repeatable and backfills old-version writes without recreating the general calendar', async () => {
+  const { db, dispose } = await localD1();
+  try {
+    const env = { ...environment(db), GOOGLE_CALENDAR_ID: 'existing-general-calendar', META_INSTAGRAM_ACCOUNT_ID: '12345', META_INSTAGRAM_ACCESS_TOKEN: 'legacy-private-token' };
+    await seedCustomer(db, 'old-version');
+    await db.prepare(`INSERT INTO bookings (id,customer_id,starts_at,ends_at,status,calendar_id,created_at,updated_at)
+      VALUES ('old-version-booking','old-version',?,?,'confirmed','existing-general-calendar','now','now')`).bind(TEST_SLOT, '2026-09-28T14:00:00Z').run();
+    await bootstrapLegacyAccounts(env); await bootstrapLegacyAccounts(env);
+    const store = new AccountStore(db);
+    assert.equal((await store.get('dwc'))?.google_calendar_id, 'existing-general-calendar');
+    assert.equal((await store.publicAccounts()).length, 1);
+    assert.equal((await db.prepare("SELECT distribuidora_id FROM bookings WHERE id='old-version-booking'").first<{ distribuidora_id: string }>())?.distribuidora_id, 'dwc');
+    const encrypted = await db.prepare('SELECT encrypted_payload FROM account_credentials').first<{ encrypted_payload: string }>();
+    assert.ok(encrypted); assert.doesNotMatch(encrypted.encrypted_payload, /legacy-private-token/);
   } finally { await dispose(); }
 });

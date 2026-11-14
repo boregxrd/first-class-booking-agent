@@ -39,6 +39,8 @@ export async function bootstrapLegacyAccounts(env: Env) {
   if (!existing || (existing.google_calendar_id && existing.google_calendar_id !== env.GOOGLE_CALENDAR_ID)) throw new Error('General calendar mapping conflicts');
   await env.DB.prepare("UPDATE distribuidoras SET google_calendar_id=?,calendar_view_url=?,calendar_setup_status='ready',updated_at=? WHERE id='dwc'")
     .bind(env.GOOGLE_CALENDAR_ID, `https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(btoa(env.GOOGLE_CALENDAR_ID))}`, now).run();
+  await env.DB.prepare("UPDATE bookings SET distribuidora_id='dwc' WHERE distribuidora_id IS NULL AND calendar_id=?")
+    .bind(env.GOOGLE_CALENDAR_ID).run(); // Includes old-version writes during the additive migration/deploy window.
   for (const [platform, accountId, token, expiry] of [
     ['instagram', env.META_INSTAGRAM_ACCOUNT_ID, env.META_INSTAGRAM_ACCESS_TOKEN, env.META_INSTAGRAM_TOKEN_EXPIRES_AT],
     ['whatsapp', env.META_WHATSAPP_PHONE_NUMBER_ID, env.META_WHATSAPP_ACCESS_TOKEN, env.META_WHATSAPP_TOKEN_EXPIRES_AT],
