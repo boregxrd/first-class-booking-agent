@@ -21,7 +21,7 @@ export function createServices(env: Env) {
     }) : null;
   const calendarClient = env.GOOGLE_CALENDAR_ID ? calendarForId(env.GOOGLE_CALENDAR_ID) : null;
   const store = new D1ConversationStore(env.DB);
-  const bookings = new D1BookingService(env.DB, calendarClient, undefined, { calendarForId });
+  const bookings = new D1BookingService(env.DB, calendarClient, undefined, { calendarForId, distribuidoraId: 'dwc' });
   const templateSender = new MetaWhatsAppTemplateSender(env);
   return {
     calendarClient, store, bookings, templateSender, textSender: new MetaTextSender(env),

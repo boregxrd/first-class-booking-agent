@@ -35,7 +35,9 @@ export class MetaTextSender implements TextSender {
   constructor(private readonly env: Env) {}
   async sendText(identity: ChannelIdentity, text: string, lastInboundAt: string, now = new Date().toISOString(), correlationId?: string): Promise<TemplateSendResult> {
     if (this.env.MULTI_ACCOUNT_ENABLED === 'true') {
-      const scoped = await routedEnvironment(this.env, identity);
+      let scoped;
+      try { scoped = await routedEnvironment(this.env, identity); }
+      catch { return { status: 'rejected', code: 'CREDENTIALS_UNAVAILABLE', retryable: true }; }
       if (!scoped) return { status: 'rejected', code: 'ACCOUNT_UNAVAILABLE', retryable: true };
       return new MetaTextSender({ ...scoped.env, MULTI_ACCOUNT_ENABLED: 'false' }).sendText(identity, text, lastInboundAt, now, correlationId);
     }
