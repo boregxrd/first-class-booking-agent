@@ -30,3 +30,23 @@ OPENAI_MODEL=gpt-4.1-mini
 # GOOGLE_CALENDAR_ID=your_calendar_id@group.calendar.google.com
 # GOOGLE_CLIENT_EMAIL=your-service-account@project-id.iam.gserviceaccount.com
 # GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Multi-account rollout: migrate, configure owner access/vault, bootstrap the existing gym,
+# authorize Google, connect accounts and verify routing before changing this to true.
+MULTI_ACCOUNT_ENABLED=false
+# ADMIN_ORIGIN=https://first-class-booking-agent.your-subdomain.workers.dev
+# ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
+# ACCESS_AUD=your_access_application_audience
+# OWNER_EMAILS=owner@example.com
+# Optional CLI/emergency owner access: distinct random token, at least 32 characters.
+# ADMIN_API_TOKEN=replace_with_a_distinct_random_owner_token
+# Keyring JSON; each key value is base64 for exactly 32 random bytes. Store as Worker secret.
+# ACCOUNT_CREDENTIAL_KEYS='{"v1":"REPLACE_WITH_BASE64_32_BYTE_KEY"}'
+# ACCOUNT_CREDENTIAL_ACTIVE_KEY=v1
+# GOOGLE_OWNER_EMAIL=dallaswellnessclubweb@gmail.com
+# GOOGLE_OAUTH_CLIENT_ID=web_application_client_id
+# GOOGLE_OAUTH_CLIENT_SECRET=web_application_client_secret
+# INSTAGRAM_OAUTH_CLIENT_ID=instagram_application_id
+# INSTAGRAM_OAUTH_CLIENT_SECRET=instagram_application_secret
+# Enable only with approved templates having name/date/time/source as four body parameters.
+WHATSAPP_ATTRIBUTION_TEMPLATES=false
