@@ -62,3 +62,15 @@ These SQL files are applied in numeric order to the Cloudflare D1 database confi
 - **`notification_jobs`** gains nullable `available_at`, `business_account_id`, `delivery_status`, and `delivery_at` fields for retry scheduling, account context, and delivery tracking.
 - **`notification_delivery_events`** gains a unique index on `(business_account_id, provider_message_id, status, occurred_at)` to deduplicate receipts, plus nullable `correlation_id` and `reconciled_at` fields for correlating and tracking receipt reconciliation.
 - **`conversations.pending_proposal`** and **`conversations.booking_operation`** are updated for existing rows: when their JSON value is present and has no `action`, the migration sets `action` to `"book"`. Rows with a null value or an existing action are left unchanged.
+
+## `0005_instagram_profile.sql` — Instagram profile suggestions
+
+- **`conversations`** gains nullable `instagram_profile` JSON: the account-scoped sender's display name/username, lookup timestamp, and any outstanding name-confirmation question and expiry. Profile names remain separate from `customers.name`; they are not accepted as booking names without the person's confirmation or explicit declaration.
+- Successful profile reads are cached for 24 hours; unavailable profiles are retried after an hour. The automatically resolved username is stored in `customers.instagram_handle`. If Meta does not return a profile, the persisted Instagram channel identity still provides a contact channel.
+- Apply this migration before deploying code that reads the new column. Older code tolerates the additional nullable column.
+
+## `0006_booking_intake.sql` — explicit booking details
+
+- **`conversations`** gains nullable `booking_intake` JSON for the customer-selected Dallas date/hour, supplied international phone, explicit lack of phone/WhatsApp, and last update time. Only incoming customer text updates these selections; an assistant suggestion cannot supply a missing day.
+- New trial proposals must match the selected day/hour, have a customer-provided/confirmed name, and have a supplied/saved phone. Only explicit phone unavailability plus a known Instagram handle allows a phone-less proposal. A bare “sí/yes” confirms only the latest saved, unexpired summary; corrections invalidate it.
+- Apply this additive migration before the updated Worker. Older pending trial summaries without verified intake must be recreated before they can be confirmed.

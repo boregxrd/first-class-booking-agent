@@ -124,9 +124,12 @@ export class D1BookingService implements BookingService {
 
     const customer = await this.db.prepare('SELECT name, whatsapp_phone, instagram_handle FROM customers WHERE id = ?')
       .bind(context.customerId).first<{ name: string | null; whatsapp_phone: string | null; instagram_handle: string | null }>();
+    const instagramContact = action !== 'cancel' && await this.db.prepare(`SELECT 1 AS present FROM channel_identities
+      WHERE customer_id = ? AND channel = 'instagram' AND business_account_id <> 'internal-direct-chat'
+        AND business_account_id <> '' AND sender_id <> '' LIMIT 1`).bind(context.customerId).first();
     if (action !== 'cancel' && (!customer?.name?.trim()
-      || !(/^\+[1-9]\d{7,14}$/.test(customer.whatsapp_phone ?? '') || /^@?[a-zA-Z0-9._]{1,30}$/.test(customer.instagram_handle ?? '')))) {
-      return failed('missing_customer_details', 'Name and a valid phone number or Instagram handle are required.');
+      || !(instagramContact || /^\+[1-9]\d{7,14}$/.test(customer.whatsapp_phone ?? '') || /^@?[a-zA-Z0-9._]{1,30}$/.test(customer.instagram_handle ?? '')))) {
+      return failed('missing_customer_details', 'Name and a reachable Instagram identity, phone number or Instagram handle are required.');
     }
     if (action === 'book' && await this.hasRecentTrial(context, {
       phone: customer?.whatsapp_phone ?? null, instagramHandle: customer?.instagram_handle ?? null,

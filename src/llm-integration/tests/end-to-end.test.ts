@@ -16,14 +16,15 @@ test('two real D1 conversations: inbox → agent → confirmation → shared ros
     const calendar = new FakeRosterCalendar();
     const store = new D1ConversationStore(db);
     const processor = createConversationProcessor({ store, bookings: new D1BookingService(db, calendar, () => TEST_NOW),
+      getInstagramProfile: async (identity) => ({ name: null, username: identity.senderId.toLowerCase() }),
       controls: new D1ConversationControls(db), now: () => TEST_NOW, model: { complete: async (messages) => {
-        const name = messages.at(-1)!.content!;
+        const name = messages.at(-1)!.content!.match(/^Soy (\w+)/)![1]!;
         return { message: { role: 'assistant', content: null, tool_calls: [{ id: 'proposal', type: 'function', function: { name: 'proposeTrial',
           arguments: JSON.stringify({ name, instagramHandle: `@${name.toLowerCase()}`, phone: null, startsAt: TEST_SLOT }) } }] }, usage: { inputTokens: 10, outputTokens: 10 } };
       } } });
     const input = (name: string, id: string, text: string): InboundMessage => ({ identity: { channel: 'instagram', businessAccountId: 'gym', senderId: name },
       providerMessageId: id, text, sentAt: TEST_NOW, receivedAt: TEST_NOW });
-    const messages = [input('Ana', 'ana-details', 'Ana'), input('Sofia', 'sofia-details', 'Sofia'), input('Ana', 'ana-confirm', 'sí confirmo'), input('Sofia', 'sofia-confirm', 'sí confirmo')];
+    const messages = [input('Ana', 'ana-details', 'Soy Ana, quiero el lunes a las 8, no tengo teléfono'), input('Sofia', 'sofia-details', 'Soy Sofia, quiero el lunes a las 8, no tengo teléfono'), input('Ana', 'ana-confirm', 'sí confirmo'), input('Sofia', 'sofia-confirm', 'sí confirmo')];
     await ingest(db, messages);
     await ingest(db, messages);
     await drainInbox(db, processor, 20, TEST_NOW);
@@ -68,12 +69,13 @@ test('a pending authorized booking sends its final reply after reconciliation, w
     const calendar = new FakeRosterCalendar();
     const bookings = new D1BookingService(db, calendar, () => TEST_NOW);
     const processor = createConversationProcessor({ store: new D1ConversationStore(db), bookings, now: () => TEST_NOW,
+      getInstagramProfile: async () => ({ name: null, username: 'ana' }),
       model: { complete: async () => ({ message: { role: 'assistant', content: null, tool_calls: [{ id: 'proposal', type: 'function', function: {
         name: 'proposeTrial', arguments: JSON.stringify({ name: 'Ana', phone: null, instagramHandle: '@ana', startsAt: TEST_SLOT }),
       } }] }, usage: { inputTokens: 1, outputTokens: 1 } }) } });
     const identity = { channel: 'instagram' as const, businessAccountId: 'gym', senderId: 'ana' };
     const incoming = (id: string, text: string): InboundMessage => ({ identity, providerMessageId: id, text, sentAt: TEST_NOW, receivedAt: TEST_NOW });
-    await ingest(db, [incoming('details', 'Quiero reservar')]); await drainInbox(db, processor, 20, TEST_NOW);
+    await ingest(db, [incoming('details', 'Soy Ana, quiero reservar el lunes a las 8, no tengo teléfono')]); await drainInbox(db, processor, 20, TEST_NOW);
     calendar.timeoutAfterWrite = true;
     await ingest(db, [incoming('confirm', 'sí confirmo')]); await drainInbox(db, processor, 20, TEST_NOW);
     assert.equal((await db.prepare("SELECT count(*) AS n FROM booking_operations WHERE status = 'pending'").first<{ n: number }>())?.n, 1);

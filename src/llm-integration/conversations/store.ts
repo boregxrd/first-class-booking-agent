@@ -1,12 +1,16 @@
 import type { BookingMutationContext, ChannelIdentity, Customer, InboundMessage } from '../../../model.js';
 import type { TrialProposal } from '../agent/tools.js';
+import type { BookingIntake } from './intake.js';
 
 export interface ConversationState {
   id: string;
   customer: Customer;
+  /** Optional lookup cache; a display name is not a confirmed customer name. */
+  instagramProfile?: { name: string | null; username: string | null; checkedAt: string; pendingName?: string | null; pendingNameExpiresAt?: string | null };
+  bookingIntake?: BookingIntake;
   /** Complete text turns only, bounded by the processor. */
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
-  proposal: (({ action: 'book' } & TrialProposal) | { action: 'reschedule' | 'cancel'; bookingId: string; expectedRevision: number; startsAt: string }) & { sourceMessageId: string; expiresAt: string } | null;
+  proposal: (({ action: 'book'; intakeVerified?: boolean } & TrialProposal) | { action: 'reschedule' | 'cancel'; bookingId: string; expectedRevision: number; startsAt: string }) & { sourceMessageId: string; expiresAt: string } | null;
   bookingOperation: { context: BookingMutationContext; startsAt: string; action: 'book' | 'reschedule' | 'cancel'; bookingId?: string; expectedRevision?: number } | null;
 }
 

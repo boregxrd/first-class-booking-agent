@@ -87,7 +87,7 @@ test('proposal only stages; explicit confirmation books and duplicate webhook re
   const f = fixture([propose()]);
   const proposal = await f.process(input('details', 'Soy Ana, quiero el lunes a las 8, mi número es +34600000000'));
   assert.equal(proposal.bookingStatus, 'awaiting_confirmation');
-  assert.match(proposal.reply, /sí confirmo/);
+  assert.match(proposal.reply, /Responde “sí”/);
   assert.equal(f.operations.length, 0);
   assert.equal(f.session.state.customer.whatsappConsent, null);
   const confirmed = await f.process(input('confirmation', 'Sí confirmo'));
@@ -107,7 +107,7 @@ test('model-written confirmation prompts are replaced by a persisted proposal be
   const f = fixture([reply('Please reply yes cancel to proceed.'), propose()]);
   const result = await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
   assert.equal(result.bookingStatus, 'awaiting_confirmation');
-  assert.match(result.reply, /sí confirmo/);
+  assert.match(result.reply, /Responde “sí”/);
   assert.doesNotMatch(result.reply, /yes cancel/);
   assert.ok(f.session.state.proposal);
   assert.equal(f.operations.length, 0);
@@ -125,19 +125,20 @@ test('repeated unsupported approval prompts never escape or authorize a booking'
 
 test('Instagram-only contact books after confirmation without granting WhatsApp consent', async () => {
   const f = fixture([propose({ name: 'Ana', phone: null, instagramHandle: '@ana.fit', startsAt })]);
-  const proposal = await f.process(input('details', 'Soy Ana, mi Instagram es @ana.fit, quiero el lunes a las 8'));
+  f.session.state.customer.instagramHandle = 'ana.fit'; // Resolved by the account-scoped profile lookup.
+  const proposal = await f.process(input('details', 'Soy Ana, no tengo teléfono, quiero el lunes a las 8'));
   assert.equal(proposal.bookingStatus, 'awaiting_confirmation');
   assert.match(proposal.reply, /@ana.fit/);
   assert.doesNotMatch(proposal.reply, /WhatsApp/);
   assert.equal((await f.process(input('confirmation', 'sí confirmo'))).bookingStatus, 'confirmed');
   assert.equal(f.session.state.customer.whatsappPhone, null);
-  assert.equal(f.session.state.customer.instagramHandle, '@ana.fit');
+  assert.equal(f.session.state.customer.instagramHandle, 'ana.fit');
   assert.equal(f.session.state.customer.whatsappConsent, null);
 });
 
 test('a confirmed trial in the last 30 days is rejected before asking for approval', async () => {
   const f = fixture([propose()], true);
-  const result = await f.process(input('details', 'Soy Ana, quiero el lunes a las 8'));
+  const result = await f.process(input('details', 'Soy Ana, quiero el lunes a las 8, +34600000000'));
   assert.equal(result.bookingStatus, 'none');
   assert.match(result.reply, /reserva confirmada.*últimos 30 días/i);
   assert.equal(f.session.state.proposal, null);
@@ -146,7 +147,7 @@ test('a confirmed trial in the last 30 days is rejected before asking for approv
 
 test('a question/correction invalidates the previous confirmation target', async () => {
   const f = fixture([propose(), reply('No tengo datos de ocupación.'), reply('Confirmemos de nuevo los detalles.')]);
-  await f.process(input('details', 'Quiero reservar'));
+  await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
   await f.process(input('question', '¿Cuál está más vacía?'));
   assert.equal(f.session.state.proposal, null);
   await f.process(input('confirmation', 'sí confirmo'));
@@ -164,7 +165,7 @@ test('invalid or injected tool arguments do not create a proposal or booking', a
 
 test('booking timeout resumes the checkpoint with the same idempotency key', async () => {
   const f = fixture([propose()]);
-  await f.process(input('details', 'Quiero reservar'));
+  await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
   f.setFailBooking(true);
   await assert.rejects(f.process(input('confirmation', 'sí confirmo')), /timeout/);
   assert.ok(f.session.state.bookingOperation);
@@ -177,7 +178,7 @@ test('booking timeout resumes the checkpoint with the same idempotency key', asy
 test('storage failure during proposal is not swallowed as a model/tool error', async () => {
   const f = fixture([propose()]);
   f.setFailComplete(true);
-  await assert.rejects(f.process(input('details', 'Quiero reservar')), /storage unavailable/);
+  await assert.rejects(f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000')), /storage unavailable/);
   assert.equal(f.operations.length, 0);
 });
 
@@ -188,4 +189,106 @@ test('schedule validation honors Dallas time, closures, past dates and DST offse
   assert.equal(isScheduledTime(startsAt, schedule, '2026-09-29T00:00:00Z'), false);
   assert.ok(isScheduledTime('2026-11-02T14:00:00Z', schedule, '2026-11-01T18:00:00Z'));
   assert.equal(isScheduledTime('2026-11-02T13:00:00Z', schedule, '2026-11-01T18:00:00Z'), false);
+});
+
+test('a time alone asks for the day before invoking the model or collecting a name', async () => {
+  const f = fixture([]);
+  const result = await f.process(input('hour-only', 'quiero 6 am'));
+  assert.match(result.reply, /Qué día/);
+  assert.equal(f.requests.length, 0);
+  assert.equal(f.session.state.proposal, null);
+  assert.equal(f.session.state.bookingIntake?.date, null);
+});
+
+test('an assistant-suggested tomorrow is not a customer-selected date', async () => {
+  const f = fixture([reply('¿Quieres venir mañana?')]);
+  await f.process(input('greeting', '¿Qué día recomiendas?'));
+  const result = await f.process(input('hour-only', 'quiero 8 am'));
+  assert.match(result.reply, /Qué día/);
+  assert.equal(f.session.state.bookingIntake?.date, null);
+  assert.equal(f.session.state.proposal, null);
+});
+
+test('day and hour survive separate turns, and a real phone is required despite a known Instagram handle', async () => {
+  const f = fixture([propose(), propose()]);
+  f.session.state.customer.instagramHandle = 'ana.fit';
+  assert.match((await f.process(input('time', 'Soy Ana, quiero 8 am'))).reply, /Qué día/);
+  assert.match((await f.process(input('day', 'el lunes'))).reply, /número de WhatsApp/);
+  assert.equal(f.session.state.proposal, null);
+  const summary = await f.process(input('phone', '+34600000000'));
+  assert.equal(summary.bookingStatus, 'awaiting_confirmation');
+  assert.match(summary.reply, /WhatsApp: \+34600000000/);
+  assert.match(summary.reply, /Instagram: @ana.fit/);
+  assert.match(summary.reply, /Al confirmar autorizas/);
+  assert.doesNotMatch(summary.reply, /este chat|sí confirmo|Revisa tu clase/);
+  assert.equal((await f.process(input('confirmation', 'Sí'))).bookingStatus, 'confirmed');
+  assert.equal(f.session.state.customer.whatsappConsent?.sourceMessageId, 'confirmation');
+});
+
+test('a closed day is rejected without silently choosing the next open date', async () => {
+  const f = fixture([]);
+  const result = await f.process(input('sunday', 'quiero el domingo a las 8 am'));
+  assert.match(result.reply, /no tenemos clases/);
+  assert.equal(f.session.state.bookingIntake?.date, '2026-09-27');
+  assert.equal(f.session.state.proposal, null);
+  assert.equal(f.operations.length, 0);
+});
+
+test('a model-proposed day must match the date actually chosen by the customer', async () => {
+  const f = fixture([propose({ name: 'Ana', phone: '+34600000000', startsAt: '2026-09-29T13:00:00.000Z' }), propose()]);
+  const result = await f.process(input('details', 'Soy Ana, quiero el lunes a las 8, +34600000000'));
+  assert.equal(result.bookingStatus, 'awaiting_confirmation');
+  assert.equal(f.session.state.proposal?.startsAt, startsAt);
+  assert.ok(f.requests[1]!.some((message) => message.role === 'tool' && message.content.includes('chosen_slot_mismatch')));
+});
+
+test('no phone plus an unavailable Instagram handle blocks a proposal instead of using a vague contact label', async () => {
+  const f = fixture([propose({ name: 'Ana', phone: null, instagramHandle: 'invented', startsAt })]);
+  const result = await f.process(input('details', 'Soy Ana, quiero el lunes a las 8, no tengo teléfono'));
+  assert.match(result.reply, /No pude recuperar tu usuario/);
+  assert.doesNotMatch(result.reply, /este chat|invented/);
+  assert.equal(f.session.state.proposal, null);
+});
+
+test('eligibility responses do not offer a different name as a workaround', async () => {
+  const f = fixture([reply('Solo para mujeres: necesitamos un nombre femenino. ¿Quieres usar otro nombre?')]);
+  const result = await f.process(input('name', 'Pedro'));
+  assert.equal(result.reply, 'Gracias. Nuestras clases son exclusivamente para mujeres. Lo siento.');
+  assert.equal(f.session.state.proposal, null);
+});
+
+test('a yes with a correction invalidates the summary and never grants consent or books', async () => {
+  const f = fixture([propose(), reply('¿Qué horario prefieres?')]);
+  await f.process(input('details', 'Soy Ana, quiero el lunes a las 8, +34600000000'));
+  assert.equal((await f.process(input('correction', 'sí, pero quiero otra hora'))).bookingStatus, 'none');
+  assert.equal(f.session.state.customer.whatsappConsent, null);
+  assert.equal(f.operations.length, 0);
+  assert.equal(f.session.state.proposal, null);
+});
+
+test('a plain yes cannot confirm an old trial summary without verified intake', async () => {
+  const f = fixture([]);
+  f.session.state.proposal = { name: 'Ana', phone: '+34600000000', instagramHandle: null, startsAt,
+    action: 'book', sourceMessageId: 'old-deployment', expiresAt: '2026-09-27T18:30:00Z' };
+  const result = await f.process(input('old-confirm', 'sí'));
+  assert.equal(result.bookingStatus, 'none');
+  assert.match(result.reply, /Qué día/);
+  assert.equal(f.operations.length, 0);
+  assert.equal(f.session.state.proposal, null);
+});
+
+test('explicit ineligibility does not become eligible by choosing another booking name', async () => {
+  const f = fixture([]);
+  const result = await f.process(input('eligibility', 'Soy un hombre, reserva a nombre de Alicia'));
+  assert.match(result.reply, /exclusivamente para mujeres/);
+  assert.equal(f.requests.length, 0);
+  assert.equal(f.operations.length, 0);
+});
+
+test('a first greeting only offers the free class, with no premature scheduling question', async () => {
+  const f = fixture([]);
+  const result = await f.process(input('hello', 'hola'));
+  assert.match(result.reply, /¿Te gustaría probarla\?/);
+  assert.doesNotMatch(result.reply, /mañana|tarde|día|hora/);
+  assert.equal(f.requests.length, 0);
 });

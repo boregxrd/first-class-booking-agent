@@ -34,7 +34,7 @@ test('direct chat persists confirmed bookings and isolates replies/notifications
     const processor = createConversationProcessor({ store: new D1ConversationStore(db), bookings, now: () => TEST_NOW,
       model: { complete: async (messages) => {
         modelCalls++;
-        const name = messages.at(-1)!.content!;
+        const name = messages.at(-1)!.content!.match(/^Soy (\w+)/)![1]!;
         return { message: { role: 'assistant', content: null, tool_calls: [{ id: 'proposal', type: 'function', function: {
           name: 'proposeTrial', arguments: JSON.stringify({ name, phone: '+12145550101', instagramHandle: null, startsAt: TEST_SLOT }),
         } }] }, usage: { inputTokens: 10, outputTokens: 5 } };
@@ -49,7 +49,7 @@ test('direct chat persists confirmed bookings and isolates replies/notifications
       return response.json() as Promise<{ reply: string; bookingStatus: string; booking: { id: string }; calendarEvent: { description: string } }>;
     };
     for (const name of ['Ana', 'Sofia']) {
-      assert.equal((await send(name, 'details', name)).bookingStatus, 'awaiting_confirmation');
+      assert.equal((await send(name, 'details', `Soy ${name}, quiero el lunes a las 8, +12145550101`)).bookingStatus, 'awaiting_confirmation');
       const confirmed = await send(name, 'confirm', 'sí confirmo');
       assert.equal(confirmed.bookingStatus, 'confirmed');
       assert.ok(confirmed.calendarEvent.description.includes(name));

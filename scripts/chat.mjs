@@ -47,6 +47,11 @@ function futureSlots() {
   return slots;
 }
 
+function localSlot(instant) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant)).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day} at ${parts.hour}:${parts.minute} (Dallas time)`;
+}
+
 if (process.argv.includes('--test')) {
   const suffix = randomUUID().slice(0, 8);
   const ana = `live-ana-${suffix}`, sofia = `live-sofia-${suffix}`;
@@ -72,16 +77,16 @@ if (process.argv.includes('--test')) {
     assert.equal(replay.booking.revision, turn.booking.revision, 'Retry must not mutate twice');
     return turn;
   }
-  await propose(ana, `Hello! My name is ${anaName}, my Instagram handle is @testana${suffix}. Book my free trial at exactly ${firstSlot} (UTC; convert to Dallas time). Use only my Instagram contact; I do not want WhatsApp messages.`);
+  await propose(ana, `Hello! My name is ${anaName}. My WhatsApp number is +12145550101. Book my free trial on ${localSlot(firstSlot)}.`);
   const first = await confirm(ana, 'confirmed');
   assert.equal(Date.parse(first.booking.startsAt), Date.parse(firstSlot));
   assert.ok(first.calendarEvent.description.includes(anaName));
-  await propose(sofia, `Hello! My name is ${sofiaName}, my Instagram handle is @testsofia${suffix}. Book my free trial at exactly ${firstSlot} (UTC; convert to Dallas time). Use only my Instagram contact; I do not want WhatsApp messages.`);
+  await propose(sofia, `Hello! My name is ${sofiaName}. My WhatsApp number is +12145550102. Book my free trial on ${localSlot(firstSlot)}.`);
   const shared = await confirm(sofia, 'confirmed');
   assert.equal(shared.booking.calendar.eventId, first.booking.calendar.eventId);
   assert.ok(shared.calendarEvent.description.includes(anaName));
   assert.ok(shared.calendarEvent.description.includes(sofiaName));
-  await propose(ana, `Please reschedule my booking ${first.booking.id} to exactly ${secondSlot} (UTC).`);
+  await propose(ana, `Please reschedule my booking ${first.booking.id} to ${localSlot(secondSlot)}.`);
   const moved = await confirm(ana, 'confirmed');
   assert.equal(moved.booking.id, first.booking.id);
   assert.equal(Date.parse(moved.booking.startsAt), Date.parse(secondSlot));
