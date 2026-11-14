@@ -34,7 +34,7 @@ export const agentTools: ModelTool[] = [
     type: 'function',
     function: {
       name: 'proposeTrial',
-      description: 'ONLY when the customer wants to book and supplied name, phone or Instagram handle, and chosen time. Prepares an explicit confirmation summary; does NOT book.',
+      description: 'ONLY when the customer wants to book and supplied name, phone or Instagram handle, and chosen time. Checks for a confirmed trial booking in the previous 30 days and prepares an explicit confirmation summary; does NOT book.',
       strict: true,
       parameters: {
         type: 'object',

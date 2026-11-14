@@ -47,6 +47,20 @@ export class D1BookingService implements BookingService {
     return row ? this.getBooking(context, row.id) : null;
   }
 
+  async hasRecentTrial(context: BookingContext, contact: { phone: string | null; instagramHandle: string | null }): Promise<boolean> {
+    const cutoff = new Date(Date.parse(context.requestedAt) - 30 * 24 * 60 * 60_000).toISOString();
+    const handle = contact.instagramHandle?.replace(/^@/, '').toLowerCase() ?? null;
+    const match = await this.db.prepare(`SELECT 1 FROM bookings b
+      JOIN customers c ON c.id = b.customer_id
+      WHERE b.starts_at >= ? AND b.starts_at < ? AND b.status IN ('confirmed', 'elapsed')
+        AND (b.customer_id = ? OR (? IS NOT NULL AND c.whatsapp_phone = ?)
+          OR (? IS NOT NULL AND LOWER(REPLACE(c.instagram_handle, '@', '')) = ?))
+      LIMIT 1`)
+      .bind(cutoff, context.requestedAt, context.customerId, contact.phone, contact.phone, handle, handle)
+      .first();
+    return Boolean(match);
+  }
+
   private async loadBooking(customerId: string, bookingId: string): Promise<TrialBooking | null> {
     const row = await this.db.prepare('SELECT * FROM bookings WHERE id = ? AND customer_id = ?')
       .bind(bookingId, customerId).first<{
@@ -114,6 +128,11 @@ export class D1BookingService implements BookingService {
       || !(/^\+[1-9]\d{7,14}$/.test(customer.whatsapp_phone ?? '') || /^@?[a-zA-Z0-9._]{1,30}$/.test(customer.instagram_handle ?? '')))) {
       return failed('missing_customer_details', 'Name and a valid phone number or Instagram handle are required.');
     }
+    if (action === 'book' && await this.hasRecentTrial(context, {
+      phone: customer?.whatsapp_phone ?? null, instagramHandle: customer?.instagram_handle ?? null,
+    })) {
+      return failed('trial_not_eligible', 'A confirmed trial booking already exists for this contact within the last 30 days.');
+    }
 
     const bookingId = existing?.id ?? `trial_${crypto.randomUUID()}`;
     const slots = [...new Set([...(existing ? [existing.startsAt] : []), startsAt])].sort();
@@ -126,17 +145,33 @@ export class D1BookingService implements BookingService {
       WHEN EXISTS (SELECT 1 FROM notification_jobs WHERE booking_id = ? AND state = 'sending') THEN NULL ELSE revision END WHERE id = ?`)
       .bind(existing.id, existing.id));
     if (action === 'book') {
+      const cutoff = new Date(Date.parse(now) - 30 * 24 * 60 * 60_000).toISOString();
+      const handle = customer!.instagram_handle?.replace(/^@/, '').toLowerCase() ?? null;
       statements.push(this.db.prepare(
         `INSERT INTO bookings (id, customer_id, starts_at, ends_at, time_zone, status, revision, calendar_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?)`
-      ).bind(bookingId, context.customerId, startsAt, endsAt, GYM_TIME_ZONE, this.calendar.configuredCalendarId, now, now));
+         SELECT ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM bookings prior JOIN customers prior_customer ON prior_customer.id = prior.customer_id
+           WHERE prior.starts_at >= ? AND prior.starts_at < ? AND prior.status IN ('confirmed', 'elapsed')
+             AND (prior.customer_id = ? OR (? IS NOT NULL AND prior_customer.whatsapp_phone = ?)
+               OR (? IS NOT NULL AND LOWER(REPLACE(prior_customer.instagram_handle, '@', '')) = ?))
+         )`
+      ).bind(bookingId, context.customerId, startsAt, endsAt, GYM_TIME_ZONE, this.calendar.configuredCalendarId, now, now,
+        cutoff, now, context.customerId, customer!.whatsapp_phone, customer!.whatsapp_phone, handle, handle));
     }
     // Claim before updating an existing booking. The partial unique index blocks a
     // competing mutation for this customer, including another create during cancellation.
-    statements.push(this.db.prepare(
-      `INSERT INTO booking_operations (customer_id, operation_key, action, argument_fingerprint, booking_id, status, result_json, affected_slots, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
-    ).bind(context.customerId, context.operationKey, action, fingerprint, bookingId, JSON.stringify(pending(operation)), operation.affected_slots, now, now));
+    statements.push(action === 'book'
+      ? this.db.prepare(
+        `INSERT INTO booking_operations (customer_id, operation_key, action, argument_fingerprint, booking_id, status, result_json, affected_slots, created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND customer_id = ?)`
+      ).bind(context.customerId, context.operationKey, action, fingerprint, bookingId, JSON.stringify(pending(operation)), operation.affected_slots, now, now,
+        bookingId, context.customerId)
+      : this.db.prepare(
+        `INSERT INTO booking_operations (customer_id, operation_key, action, argument_fingerprint, booking_id, status, result_json, affected_slots, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+      ).bind(context.customerId, context.operationKey, action, fingerprint, bookingId, JSON.stringify(pending(operation)), operation.affected_slots, now, now));
     if (existing) {
       // A revision mismatch aborts the entire batch through NOT NULL, rather than
       // committing an operation whose requested mutation was never applied.
@@ -149,7 +184,12 @@ export class D1BookingService implements BookingService {
       statements.push(this.db.prepare("UPDATE notification_jobs SET state = 'cancelled', updated_at = ? WHERE booking_id = ? AND state IN ('pending', 'leased')")
         .bind(now, bookingId));
     }
-    try { await this.db.batch(statements); }
+    try {
+      const results = await this.db.batch(statements);
+      if (action === 'book' && !results[0]?.meta.changes) {
+        return failed('trial_not_eligible', 'A confirmed trial booking already exists for this contact within the last 30 days.');
+      }
+    }
     catch (error) {
       const raced = await this.operation(context.customerId, context.operationKey);
       if (raced) return this.replay(raced, action, fingerprint);
