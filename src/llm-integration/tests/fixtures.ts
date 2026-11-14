@@ -6,12 +6,12 @@ import { CalendarApiError, type GoogleCalendarEvent, type RosterCalendar, type R
 export const TEST_NOW = '2026-09-27T12:00:00.000Z';
 export const TEST_SLOT = '2026-09-28T13:00:00.000Z';
 
-export async function localD1() {
+export async function localD1(through?: string) {
   const runtime = new Miniflare({ modules: true, script: 'export default { fetch() { return new Response("test"); } }', d1Databases: ['DB'] });
   try {
     const db = await runtime.getD1Database('DB') as unknown as D1Database;
     const directory = new URL('../../../migrations/', import.meta.url);
-    for (const name of (await readdir(directory)).filter((name) => name.endsWith('.sql')).sort()) {
+    for (const name of (await readdir(directory)).filter((name) => name.endsWith('.sql') && (!through || name <= through)).sort()) {
       const sql = await readFile(new URL(name, directory), 'utf8');
       for (const statement of sql.replace(/--[^\n]*/g, '').split(';').filter((part) => part.trim())) await db.prepare(statement).run();
     }
