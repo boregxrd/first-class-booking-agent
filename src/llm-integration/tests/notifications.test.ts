@@ -49,6 +49,28 @@ test('cancellation during an in-flight notification is deferred; subsequent retr
   } finally { await dispose(); }
 });
 
+test('both reminder jobs use the WhatsApp reminder template and the opted-in phone', async () => {
+  const { db, dispose } = await localD1();
+  try {
+    await seedCustomer(db, 'ana');
+    const calendar = new FakeRosterCalendar();
+    const booking = await new D1BookingService(db, calendar, () => TEST_NOW).bookTrial(bookingContext('ana'), { startsAt: TEST_SLOT });
+    if (booking.status !== 'succeeded') throw new Error('expected booking');
+    await db.prepare("UPDATE notification_jobs SET scheduled_at = ? WHERE kind IN ('reminder', 'reminder_1h')").bind(TEST_NOW).run();
+    const sent: Array<{ to: string; templateName: string }> = [];
+    const scheduler = new D1NotificationScheduler(db, { sendTemplate: async ({ to, templateName }) => {
+      sent.push({ to, templateName });
+      return { status: 'accepted', providerMessageId: `reminder-${sent.length}` };
+    } }, calendar, config);
+    assert.equal(await scheduler.processDueNotifications(TEST_NOW), 3);
+    assert.deepEqual(sent, [
+      { to: '+12145550101', templateName: 'confirm' },
+      { to: '+12145550101', templateName: 'remind' },
+      { to: '+12145550101', templateName: 'remind' },
+    ]);
+  } finally { await dispose(); }
+});
+
 test('early, duplicate and out-of-order receipts converge without resending; expired sends become unknown', async () => {
   const { db, dispose } = await localD1();
   try {

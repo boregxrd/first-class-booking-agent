@@ -38,7 +38,12 @@ test('shared roster: two prospects, replay, move only one, cancel only one and r
     assert.deepEqual(await service.bookTrial(bookingContext('ana'), { startsAt: TEST_SLOT }), ana);
     assert.equal(calendar.writes, writes);
     assert.equal((await db.prepare('SELECT count(*) AS n FROM notification_jobs WHERE booking_id = ?').bind(sofia.booking.id).first<{ n: number }>())?.n, 0);
-    assert.equal((await db.prepare('SELECT count(*) AS n FROM notification_jobs WHERE booking_id = ?').bind(ana.booking.id).first<{ n: number }>())?.n, 2);
+    assert.deepEqual((await db.prepare('SELECT kind, scheduled_at FROM notification_jobs WHERE booking_id = ? ORDER BY kind')
+      .bind(ana.booking.id).all<{ kind: string; scheduled_at: string }>()).results, [
+      { kind: 'confirmation', scheduled_at: TEST_NOW },
+      { kind: 'reminder', scheduled_at: '2026-09-27T13:00:00.000Z' },
+      { kind: 'reminder_1h', scheduled_at: '2026-09-28T12:00:00.000Z' },
+    ]);
     assert.equal(await service.getBooking(bookingContext('sofia'), ana.booking.id), null);
     const conflict = await service.bookTrial(bookingContext('ana'), { startsAt: '2026-09-29T13:00:00.000Z' });
     assert.equal(conflict.status === 'failed' && conflict.code, 'idempotency_conflict');
@@ -89,7 +94,33 @@ test('timeout-after-create and DB-finalization failure recover without duplicate
     assert.equal(calendar.events.size, 1);
     assert.equal([...calendar.events.values()][0]!.description!.match(/Name ana/g)?.length, 1);
     assert.equal((await db.prepare('SELECT count(*) AS n FROM bookings').first<{ n: number }>())?.n, 1);
-    assert.equal((await db.prepare('SELECT count(*) AS n FROM notification_jobs').first<{ n: number }>())?.n, 2);
+    assert.equal((await db.prepare('SELECT count(*) AS n FROM notification_jobs').first<{ n: number }>())?.n, 3);
+  } finally { await dispose(); }
+});
+
+test('missed reminders are omitted while a reminder exactly one hour away is scheduled', async () => {
+  const { db, dispose } = await localD1();
+  try {
+    const calendar = new FakeRosterCalendar();
+    await seedCustomer(db, 'within-24h');
+    const service = new D1BookingService(db, calendar, () => TEST_NOW);
+    const soon = await service.bookTrial(bookingContext('within-24h'), { startsAt: '2026-09-28T11:00:00.000Z' });
+    if (soon.status !== 'succeeded') throw new Error('expected booking');
+    assert.deepEqual((await db.prepare('SELECT kind FROM notification_jobs WHERE booking_id = ? ORDER BY kind')
+      .bind(soon.booking.id).all<{ kind: string }>()).results.map(({ kind }) => kind), ['confirmation', 'reminder_1h']);
+
+    const exactlyOneHourBefore = '2026-09-28T12:00:00.000Z';
+    await seedCustomer(db, 'one-hour');
+    const justInTime = new D1BookingService(db, calendar, () => exactlyOneHourBefore);
+    const booking = await justInTime.bookTrial({
+      ...bookingContext('one-hour'), requestedAt: exactlyOneHourBefore,
+    }, { startsAt: '2026-09-28T13:00:00.000Z' });
+    if (booking.status !== 'succeeded') throw new Error('expected booking');
+    assert.deepEqual((await db.prepare('SELECT kind, scheduled_at FROM notification_jobs WHERE booking_id = ? ORDER BY kind')
+      .bind(booking.booking.id).all<{ kind: string; scheduled_at: string }>()).results, [
+      { kind: 'confirmation', scheduled_at: exactlyOneHourBefore },
+      { kind: 'reminder_1h', scheduled_at: exactlyOneHourBefore },
+    ]);
   } finally { await dispose(); }
 });
 
