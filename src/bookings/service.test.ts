@@ -110,7 +110,7 @@ test('missed reminders are omitted while a reminder exactly one hour away is sch
       .bind(soon.booking.id).all<{ kind: string }>()).results.map(({ kind }) => kind), ['confirmation', 'reminder_1h']);
 
     const exactlyOneHourBefore = '2026-09-28T12:00:00.000Z';
-    await seedCustomer(db, 'one-hour');
+    await seedCustomer(db, 'one-hour', '+12145550102');
     const justInTime = new D1BookingService(db, calendar, () => exactlyOneHourBefore);
     const booking = await justInTime.bookTrial({
       ...bookingContext('one-hour'), requestedAt: exactlyOneHourBefore,
@@ -162,6 +162,64 @@ test('concurrent creates for one customer allow only one active booking; missing
     const missing = await service.bookTrial(bookingContext('missing'), { startsAt: TEST_SLOT });
     assert.equal(missing.status === 'failed' && missing.code, 'missing_customer_details');
     assert.equal((await new D1BookingService(db, null).bookTrial(bookingContext('missing'), { startsAt: TEST_SLOT })).status, 'failed');
+  } finally { await dispose(); }
+});
+
+test('recent trial lookup matches customer, phone or Instagram handle and ignores ineligible history', async () => {
+  const { db, dispose } = await localD1();
+  try {
+    const service = new D1BookingService(db, new FakeRosterCalendar(), () => TEST_NOW);
+    const addHistory = async (id: string, customerId: string, startsAt: string, status: string) => {
+      await db.prepare(`INSERT INTO bookings
+        (id, customer_id, starts_at, ends_at, time_zone, status, revision, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'America/Chicago', ?, 1, ?, ?)`)
+        .bind(id, customerId, startsAt, '2026-09-28T14:00:00.000Z', status, TEST_NOW, TEST_NOW).run();
+    };
+
+    await seedCustomer(db, 'same-customer', null, null);
+    await addHistory('history-customer', 'same-customer', '2026-09-20T13:00:00.000Z', 'elapsed');
+    assert.equal(await service.hasRecentTrial(bookingContext('same-customer'), { phone: null, instagramHandle: null }), true);
+
+    await seedCustomer(db, 'phone-owner');
+    await seedCustomer(db, 'phone-alias');
+    await addHistory('history-phone', 'phone-owner', '2026-09-20T13:00:00.000Z', 'confirmed');
+    assert.equal(await service.hasRecentTrial(bookingContext('phone-alias'), { phone: '+12145550101', instagramHandle: null }), true);
+
+    await seedCustomer(db, 'handle-owner', '+12145550201', '@Ana.Fit');
+    await seedCustomer(db, 'handle-alias', '+12145550202', '@other');
+    await addHistory('history-handle', 'handle-owner', '2026-09-20T13:00:00.000Z', 'elapsed');
+    assert.equal(await service.hasRecentTrial(bookingContext('handle-alias'), { phone: null, instagramHandle: 'ana.fit' }), true);
+
+    await seedCustomer(db, 'cancelled-owner', '+12145550301', '@cancelled');
+    await addHistory('history-cancelled', 'cancelled-owner', '2026-09-20T13:00:00.000Z', 'cancelled');
+    assert.equal(await service.hasRecentTrial(bookingContext('cancelled-owner'), { phone: '+12145550301', instagramHandle: null }), false);
+
+    await seedCustomer(db, 'old-owner', '+12145550401', '@old');
+    await addHistory('history-old', 'old-owner', '2026-08-27T11:59:59.000Z', 'elapsed');
+    assert.equal(await service.hasRecentTrial(bookingContext('old-owner'), { phone: '+12145550401', instagramHandle: null }), false);
+
+    await seedCustomer(db, 'future-owner', '+12145550501', '@future');
+    await addHistory('history-future', 'future-owner', '2026-09-28T13:00:00.000Z', 'confirmed');
+    assert.equal(await service.hasRecentTrial(bookingContext('future-owner'), { phone: '+12145550501', instagramHandle: null }), false);
+  } finally { await dispose(); }
+});
+
+test('booking a second trial within 30 days is blocked by customer contact', async () => {
+  const { db, dispose } = await localD1();
+  try {
+    const calendar = new FakeRosterCalendar();
+    const service = new D1BookingService(db, calendar, () => TEST_NOW);
+    await seedCustomer(db, 'previous');
+    await seedCustomer(db, 'new-identity');
+    await db.prepare(`INSERT INTO bookings
+      (id, customer_id, starts_at, ends_at, time_zone, status, revision, created_at, updated_at)
+      VALUES ('previous-trial', 'previous', '2026-09-20T13:00:00.000Z', '2026-09-20T14:00:00.000Z',
+        'America/Chicago', 'elapsed', 1, ?, ?)`).bind(TEST_NOW, TEST_NOW).run();
+
+    const result = await service.bookTrial(bookingContext('new-identity'), { startsAt: TEST_SLOT });
+    assert.equal(result.status === 'failed' && result.code, 'trial_not_eligible');
+    assert.equal((await db.prepare("SELECT count(*) AS n FROM bookings WHERE customer_id = 'new-identity'").first<{ n: number }>())?.n, 0);
+    assert.equal(calendar.events.size, 0);
   } finally { await dispose(); }
 });
 

@@ -149,6 +149,7 @@ export interface BookingService {
   getClassSchedule(): Promise<ClassSchedule>;
   getCurrentBooking(context: BookingContext): Promise<TrialBooking | null>;
   getBooking(context: BookingContext, bookingId: string): Promise<TrialBooking | null>;
+  hasRecentTrial(context: BookingContext, contact: { phone: E164Phone | null; instagramHandle: string | null }): Promise<boolean>;
   bookTrial(context: BookingMutationContext, input: BookTrialInput): Promise<BookingResult>;
   rescheduleTrial(context: BookingMutationContext, input: RescheduleTrialInput): Promise<BookingResult>;
   cancelTrial(context: BookingMutationContext, input: CancelTrialInput): Promise<BookingResult>;

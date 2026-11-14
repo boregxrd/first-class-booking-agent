@@ -42,6 +42,10 @@ Delivery progresses `pending → leased → sending → accepted`, with `failed`
 - Title/roster-description edits are overwritten from D1. Empty slots retain their stable event ID with zero prospects.
 - The owner must approve this policy and the configured lead time, horizon, closures and repeat-trial rules before launch.
 
+## Repeat trial eligibility
+
+Before proposing and again when creating a booking, the service checks D1 booking history for the previous 30 days. A past `confirmed` or `elapsed` booking matches by customer ID, exact phone number, or case-insensitive Instagram handle; cancelled and failed bookings do not count. This records a confirmed booking, not attendance. Historical Google Calendar events that were never recorded in D1 are not included.
+
 ## Monitoring and retention
 
 Public Meta app settings pages are served by the Worker at `/privacy` and `/data-deletion`. Privacy/deletion requests go to the owner-monitored `dallaswellnessclubweb@gmail.com` inbox and require manual operator handling. Use the **Data deletion instructions URL** option in Meta, not the deletion-callback option; no automatic deletion callback is implemented. Verify the requester, resolve pending work and notification jobs, and remove related application records and Calendar roster information together. Removing only a Calendar entry is insufficient because the app can rebuild it from D1. Review provider-held copies separately. The public policy explains that chat-history cleanup is normally 30 days, processed-turn records (including reply copies) can last 90 days, and customer/booking/consent records have no automatic expiry.

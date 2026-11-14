@@ -69,6 +69,11 @@ export function createConversationProcessor(dependencies: {
         if (result.status === 'failed') {
           if (result.retryable) throw new Error('Booking dependency temporarily unavailable; retry the checkpointed action');
           state.bookingOperation = null;
+          if (result.code === 'trial_not_eligible') {
+            return finish(language === 'es'
+              ? 'Según nuestros registros, ya tienes una reserva confirmada para una clase de prueba en los últimos 30 días, así que no puedo reservar otra clase gratis todavía 💖.'
+              : 'Our records show a confirmed trial booking for this contact within the last 30 days, so I can’t book another free trial yet 💖.', 'failed');
+          }
           return finish(language === 'es' ? 'No pude confirmar tu reserva. Podemos intentar de nuevo o elegir otro horario 💖.' : 'I could not confirm your booking. We can try again or choose another time 💖.', 'failed');
         }
         if (result.booking.customerId !== state.customer.id) throw new Error('Booking ownership mismatch');
@@ -166,6 +171,12 @@ export function createConversationProcessor(dependencies: {
             const proposal = proposalSchema.parse(args);
             if (!isScheduledTime(proposal.startsAt, schedule, now)) {
               toolResult = { error: 'invalid_schedule', message: 'Ask for a valid scheduled time.' };
+            } else if (await dependencies.bookings.hasRecentTrial({
+              customerId: state.customer.id, conversationId: state.id, sourceMessageId: message.providerMessageId, requestedAt: now,
+            }, { phone: proposal.phone, instagramHandle: proposal.instagramHandle })) {
+              return finish(language === 'es'
+                ? 'Según nuestros registros, ya tienes una reserva confirmada para una clase de prueba en los últimos 30 días, así que no puedo reservar otra clase gratis todavía 💖.'
+                : 'Our records show a confirmed trial booking for this contact within the last 30 days, so I can’t book another free trial yet 💖.', 'none');
             } else {
               validatedProposal = proposal;
             }

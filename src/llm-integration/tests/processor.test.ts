@@ -21,7 +21,7 @@ const propose = (args: unknown = { name: 'Ana', phone: '+34600000000', startsAt 
 });
 
 /** Test-only store. Production must implement durable checkpoints, locking and an outbox. */
-function fixture(responses: ModelReply[]) {
+function fixture(responses: ModelReply[], priorTrial = false) {
   let state: ConversationState = {
     id: 'conversation-1', history: [], proposal: null, bookingOperation: null,
     customer: { id: 'customer-1', name: null, whatsappPhone: null, language: 'es', whatsappConsent: null, createdAt: now, updatedAt: now },
@@ -51,6 +51,7 @@ function fixture(responses: ModelReply[]) {
     getClassSchedule: async () => schedule,
     getBooking: async () => null,
     getCurrentBooking: async () => null,
+    hasRecentTrial: async () => priorTrial,
     bookTrial: async (context, args) => {
       assert.equal(state.customer.name, 'Ana', 'customer checkpoint must precede booking');
       if (state.customer.whatsappPhone) assert.equal(state.customer.whatsappConsent?.sourceMessageId, 'confirmation');
@@ -132,6 +133,15 @@ test('Instagram-only contact books after confirmation without granting WhatsApp 
   assert.equal(f.session.state.customer.whatsappPhone, null);
   assert.equal(f.session.state.customer.instagramHandle, '@ana.fit');
   assert.equal(f.session.state.customer.whatsappConsent, null);
+});
+
+test('a confirmed trial in the last 30 days is rejected before asking for approval', async () => {
+  const f = fixture([propose()], true);
+  const result = await f.process(input('details', 'Soy Ana, quiero el lunes a las 8'));
+  assert.equal(result.bookingStatus, 'none');
+  assert.match(result.reply, /reserva confirmada.*últimos 30 días/i);
+  assert.equal(f.session.state.proposal, null);
+  assert.equal(f.operations.length, 0);
 });
 
 test('a question/correction invalidates the previous confirmation target', async () => {
