@@ -6,6 +6,7 @@ import { reminderEnvironment } from '../../accounts/runtime.js';
 import { D1BookingService } from '../../bookings/service.js';
 import { D1NotificationScheduler } from '../../notifications/scheduler.js';
 import { MetaTextSender } from '../../channels/outbound.js';
+import { processMetaWebhook } from '../../channels/meta.js';
 import { Hono } from 'hono';
 import { createAccountRoutes } from '../../accounts/routes.js';
 import type { Env } from '../../types/env.js';
@@ -123,6 +124,31 @@ test('owner portal APIs hide credentials and create recoverable profiles when Go
     assert.equal(list.status, 200); assert.doesNotMatch(await list.text(), /encrypted_payload|accessToken|refreshToken/);
     assert.equal((await app.request('/admin/api/bootstrap', { method: 'POST', headers: { ...headers, Origin: 'https://evil.example' }, body: '{}' }, env)).status, 401);
     const script = await app.request('/admin/app.js', {}, env);
-    assert.doesNotMatch(await script.text(), /innerHTML/);
+    const source = await script.text();
+    assert.doesNotMatch(source, /innerHTML/);
+    assert.doesNotThrow(() => new Function(source), 'portal JavaScript must parse independently of the TypeScript build');
+  } finally { await dispose(); }
+});
+
+test('signed webhook routing accepts each registered destination and never accepts unknown or disconnected accounts', async () => {
+  const { db, dispose } = await localD1();
+  try {
+    const env = environment(db), a = await trainer(env, 'a'); await trainer(env, 'b');
+    const body = (account: string, id: string) => JSON.stringify({ object: 'instagram', entry: [{ messaging: [{
+      sender: { id: 'prospect' }, recipient: { id: account }, timestamp: Date.now(), message: { mid: id, text: 'hola' },
+    }] }] });
+    const send = async (account: string, id: string) => {
+      const payload = body(account, id);
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.META_APP_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const signature = [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)))].map((value) => value.toString(16).padStart(2, '0')).join('');
+      return processMetaWebhook(payload, `sha256=${signature}`, env);
+    };
+    assert.equal((await send('a', 'one')).status, 200);
+    assert.equal((await send('b', 'two')).status, 200);
+    assert.equal((await send('unknown', 'three')).status, 200);
+    await new AccountStore(db).disconnect(a.accountId);
+    assert.equal((await send('a', 'four')).status, 200);
+    const stored = await db.prepare('SELECT business_account_id FROM message_inbox ORDER BY seq').all();
+    assert.deepEqual(stored.results, [{ business_account_id: 'a' }, { business_account_id: 'b' }]);
   } finally { await dispose(); }
 });
