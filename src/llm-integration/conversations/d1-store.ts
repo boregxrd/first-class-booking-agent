@@ -82,12 +82,12 @@ export class D1ConversationStore implements ConversationStore {
     // 2. Get or create Conversation
     let convRow = await this.db
       .prepare(
-         `SELECT id, pending_proposal, booking_operation, revision
+         `SELECT id, pending_proposal, booking_operation, instagram_profile, booking_intake, revision
          FROM conversations
          WHERE channel = ? AND business_account_id = ? AND sender_id = ?`
       )
       .bind(identity.channel, identity.businessAccountId, identity.senderId)
-      .first<{ id: string; pending_proposal: string | null; booking_operation: string | null; revision: number }>();
+      .first<{ id: string; pending_proposal: string | null; booking_operation: string | null; instagram_profile: string | null; booking_intake: string | null; revision: number }>();
 
     let conversationId: string;
     let pendingProposal: ConversationState['proposal'] = null;
@@ -137,6 +137,8 @@ export class D1ConversationStore implements ConversationStore {
       history,
       proposal: pendingProposal,
       bookingOperation: convRow?.booking_operation ? JSON.parse(convRow.booking_operation) : null,
+      instagramProfile: convRow?.instagram_profile ? JSON.parse(convRow.instagram_profile) : undefined,
+      bookingIntake: convRow?.booking_intake ? JSON.parse(convRow.booking_intake) : undefined,
     };
 
     const db = this.db;
@@ -159,8 +161,9 @@ export class D1ConversationStore implements ConversationStore {
       const statements = [
         db.prepare(`UPDATE customers SET name = ?, whatsapp_phone = ?, instagram_handle = ?, language = ?, updated_at = ? WHERE id = ?`)
           .bind(value.customer.name, value.customer.whatsappPhone, value.customer.instagramHandle ?? null, value.customer.language, timestamp, value.customer.id),
-        db.prepare(`UPDATE conversations SET pending_proposal = ?, booking_operation = ?, revision = revision + 1, updated_at = ? WHERE id = ?`)
-          .bind(value.proposal ? JSON.stringify(value.proposal) : null, value.bookingOperation ? JSON.stringify(value.bookingOperation) : null, timestamp, value.id),
+        db.prepare(`UPDATE conversations SET pending_proposal = ?, booking_operation = ?, instagram_profile = ?, booking_intake = ?, revision = revision + 1, updated_at = ? WHERE id = ?`)
+          .bind(value.proposal ? JSON.stringify(value.proposal) : null, value.bookingOperation ? JSON.stringify(value.bookingOperation) : null,
+            value.instagramProfile ? JSON.stringify(value.instagramProfile) : null, value.bookingIntake ? JSON.stringify(value.bookingIntake) : null, timestamp, value.id),
       ];
       const evidence = value.customer.whatsappConsent;
       if (evidence) statements.push(db.prepare(

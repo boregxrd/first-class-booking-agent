@@ -6,9 +6,9 @@ Backlog compartido de Manu y Félix (Bangfeal). Este archivo es la fuente de ver
 
 | Estado | Tareas |
 |---|---:|
-| Todo | 9 |
+| Todo | 8 |
 | In progress | 1 |
-| Finished | 2 |
+| Finished | 4 |
 
 El estado y la verificación de cada tarea se reflejan en su sección y notas; las tareas en Todo siguen pendientes de verificación.
 
@@ -29,12 +29,13 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 
 | ID | Tarea | Responsable | Progreso / notas |
 |---|---|---|---|
-| 3 | Obtener el nombre desde Instagram. Si no consigue obtenerlo, pedir confirmación al usuario. | Manu | Inicio: 2026-11-14. Alcance: consultar el nombre del remitente mediante Instagram y pedir confirmación al usuario si no está disponible. Tarea iniciada en el backlog; implementación pendiente. |
+| 3 | Obtener el nombre desde Instagram. Si no consigue obtenerlo, pedir confirmación al usuario. | Manu | Inicio: 2026-11-14. Implementado lookup por sender ID con timeout/caché, username automático y nombre de perfil separado del confirmado; confirmación/corrección de alias probada con D1 local. Migración 0005 aplicada. La prueba real dejó nombre y username vacíos en la caché: pendiente identificar el error de Meta y verificar ambos campos antes de cerrar. Añadidos logs de diagnóstico sin cuerpos de respuesta ni tokens. La tarea 13 reemplaza el fallback inicial: pedir teléfono y solo usar un handle real conocido si la persona declara no tener teléfono/WhatsApp. |
 
 ## Finished
 
 | ID | Tarea | Responsable | Resultado / verificación |
 |---|---|---|---|
+| 13 | Corregir el flujo de reserva tras la prueba real: bienvenida breve, día y hora explícitos, política de clases para mujeres, teléfono para WhatsApp y resumen corto. | Manu | Inicio y finalización: 2026-11-14. Implementadas selección persistente de día/hora solo desde texto de la persona, guardas contra fechas inferidas y domingos cerrados, nombre suministrado/confirmado, teléfono obligatorio salvo ausencia explícita más handle real conocido, bienvenida breve, política sin ofrecer cambiar el nombre y resumen corto con “sí/yes” y consentimiento WhatsApp. Corregidas repreguntas tras recibir el nombre/teléfono. Verificación: typecheck, 78/78 tests, validación de sintaxis del cliente y smoke real en chat protegido hasta resumen pendiente de confirmación (sin crear reserva real). Migración 0006 aplicada; versión 9a149a5c-a07d-4607-8094-7cf22c31499a desplegada. Integrados y conservados los cambios de elegibilidad de Félix tras git pull. La incidencia de consulta de perfil permanece separada en #3. |
 | 5 | Buscar al usuario en el calendario hasta un mes atrás para comprobar si ya tuvo una primera clase. | Félix | Finalizada 2026-11-14. D1 bloquea otra propuesta/reserva si encuentra una reserva confirmada en los 30 días anteriores para el mismo customer, teléfono exacto o handle de Instagram (sin distinguir mayúsculas); canceladas/fallidas y reservas fuera del intervalo no cuentan. Typecheck y 53 pruebas pasan. No se buscan eventos históricos externos que no estén registrados en D1; el registro confirma reserva, no asistencia. |
 | 7 | Programar recordatorios por WhatsApp 24 horas y 1 hora antes de la clase, si es posible. | Félix | Finalizada 2026-11-14. Añadidos recordatorios WhatsApp de 24 h y 1 h con opt-in y número; se omiten avisos cuyo horario ya pasó y ambos usan la plantilla configurada. Typecheck y 50 pruebas pasan; entrega real pendiente de la configuración WhatsApp de la tarea #6. |
 | 1 | Investigar por qué el bot no responde a algunas personas en Instagram, especialmente a quienes la cuenta no sigue. | Manu | Inicio y finalización: 2026-11-14. Causa identificada: modo test restringido al sender 1078653611459615; los demás remitentes se observaban sin procesar. A petición del usuario, cambiado `META_MESSAGING_MODE` a `live` y desplegada versión `d8cbbf28-14d8-4773-9115-37111780fd7a`, eliminando la restricción. Verificación: typecheck correcto, 48/48 tests correctos, Worker HTTP 200, cola con productor/consumidor, cron sin excepciones y D1 sin alertas abiertas ni mensajes pendientes/fallidos durante la revisión. El usuario confirmó que un amigo envió un DM y recibió respuesta tras el cambio. Cuenta receptora documentada: @dwctesthello. No se confirmó si esa cuenta sigue al amigo; la aplicación ya no filtra por remitente ni por relación de seguimiento. |
