@@ -43,3 +43,11 @@
 ## Delivery
 
 Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserve #6 and Félix's #10 as separately owned provider activation/integration work. External authorizations, approved templates and real sharing/delivery are live gates, not simulated completion.
+
+## Verification record — 2026-11-14
+
+- TypeScript checks and all **94 local tests** pass. Tests run real local D1 migrations/SQL with simulated Google/Meta transports, including legacy backfill, profile-creation retries, two-calendar roster isolation, immutable booking attribution after reconfiguration/disconnect, recovery/cancellation, gym-only reminder sender, source template parameters, JWT signatures/audience/owner checks, OAuth replay defense, key rotation and expired-token isolation.
+- Wrangler dry-run and deployed Worker build passed. Version `c4b7fc7d-cda0-4baa-a915-75869b0fab7b` is deployed with `MULTI_ACCOUNT_ENABLED=false` and notifications still disabled.
+- Migration 0007 applied remotely; authenticated bootstrap imported the existing DWC calendar/Instagram connection without recreating a calendar. Public health returns 200, protected API returns 401 without authorization, and authenticated overview returns only public account metadata.
+- Owner/vault secrets installed without printing values; their ignored local backup has mode 0600. Instructions and provider callback URLs are in `OWNER_PORTAL.md`.
+- **Still pending for #14/#8:** configure OAuth application clients, gym Google consent, real calendar creation/reader sharing/invitation, second real social account, and two-account live acceptance. WhatsApp template approval/delivery is #6, TikTok messaging is Félix's #10. The checklist above remains unchecked until the corresponding real-provider checks are completed.
