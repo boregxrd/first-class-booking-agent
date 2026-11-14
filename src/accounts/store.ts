@@ -18,12 +18,14 @@ export interface AccountRoute { account: SocialAccount; distribuidora: Distribui
 
 export class AccountStore {
   constructor(readonly db: D1Database) {}
-  async create(input: unknown): Promise<Distribuidora> {
+  async create(input: unknown, requestId?: string): Promise<Distribuidora> {
     const value = distribuidoraInput.parse(input);
-    const id = crypto.randomUUID(), now = new Date().toISOString();
-    await this.db.prepare('INSERT INTO distribuidoras (id,name,email,created_at,updated_at) VALUES (?,?,?,?,?)')
+    const id = requestId ? z.string().uuid().parse(requestId) : crypto.randomUUID(), now = new Date().toISOString();
+    await this.db.prepare('INSERT INTO distribuidoras (id,name,email,created_at,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
       .bind(id, value.name, value.email.toLowerCase(), now, now).run();
-    return (await this.get(id))!;
+    const profile = (await this.get(id))!;
+    if (profile.name !== value.name || profile.email !== value.email.toLowerCase()) throw new Error('Creation request ID was reused with different profile details');
+    return profile;
   }
   get(id: string) { return this.db.prepare('SELECT * FROM distribuidoras WHERE id = ?').bind(id).first<Distribuidora>(); }
   async list() { return (await this.db.prepare('SELECT * FROM distribuidoras ORDER BY created_at,id').all<Distribuidora>()).results; }

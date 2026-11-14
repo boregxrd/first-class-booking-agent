@@ -35,7 +35,8 @@ export function createAccountRoutes() {
       generalProfileId: await store.setting('general_distribuidora_id') ?? 'dwc', multiAccountEnabled: c.env.MULTI_ACCOUNT_ENABLED === 'true' });
   });
   routes.post('/admin/api/profiles', async (c) => {
-    const profile = await new AccountStore(c.env.DB!).create(await c.req.json());
+    const profile = await new AccountStore(c.env.DB!).create(await c.req.json(), c.req.header('Idempotency-Key'));
+    if (profile.calendar_setup_status === 'ready') return c.json({ profile, setupPending: false });
     try {
       await ownerGoogleToken(c.env);
       const ready = await provisionCalendar(c.env.DB!, profile.id, c.env.GOOGLE_CLIENT_EMAIL ?? '', new GoogleOwnerCalendars(c.env));
