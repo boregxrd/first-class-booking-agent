@@ -7,8 +7,8 @@ Backlog compartido de Manu y Félix (Bangfeal). Este archivo es la fuente de ver
 | Estado | Tareas |
 |---|---:|
 | Todo | 8 |
-| In progress | 1 |
-| Finished | 4 |
+| In progress | 0 |
+| Finished | 5 |
 
 El estado y la verificación de cada tarea se reflejan en su sección y notas; las tareas en Todo siguen pendientes de verificación.
 
@@ -21,7 +21,7 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 | 6 | Conectar WhatsApp mediante el número de teléfono. | Manu | Pendiente. |
 | 8 | Implementar soporte para varias cuentas con un contexto y calendario compartidos. | Manu | Pendiente. |
 | 9 | Definir e implementar los perfiles de distribuidoras y su almacenamiento. | Manu | Pendiente. |
-| 10 | Integrar los DMs de TikTok como canal de conversación, igual que WhatsApp e Instagram. | Por asignar | Pendiente. |
+| 10 | Integrar los DMs de TikTok como canal de conversación, igual que WhatsApp e Instagram. | Félix | Pendiente. Asignada a Félix por Manu el 2026-11-14. |
 | 11 | Automatizar mensajes privados a partir de comentarios con palabras clave en Instagram. | Por asignar | Pendiente; dejar para el final. |
 | 12 | Automatizar mensajes privados a partir de comentarios con palabras clave en TikTok. | Por asignar | Pendiente; dejar para el final. |
 
@@ -29,12 +29,12 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 
 | ID | Tarea | Responsable | Progreso / notas |
 |---|---|---|---|
-| 3 | Obtener el nombre desde Instagram. Si no consigue obtenerlo, pedir confirmación al usuario. | Manu | Inicio: 2026-11-14. Implementado lookup por sender ID con timeout/caché, username automático y nombre de perfil separado del confirmado; confirmación/corrección de alias probada con D1 local. Migración 0005 aplicada. La prueba real dejó nombre y username vacíos en la caché: pendiente identificar el error de Meta y verificar ambos campos antes de cerrar. Añadidos logs de diagnóstico sin cuerpos de respuesta ni tokens. La tarea 13 reemplaza el fallback inicial: pedir teléfono y solo usar un handle real conocido si la persona declara no tener teléfono/WhatsApp. |
 
 ## Finished
 
 | ID | Tarea | Responsable | Resultado / verificación |
 |---|---|---|---|
+| 3 | Obtener el nombre desde Instagram. Si no consigue obtenerlo, pedir confirmación al usuario. | Manu | Inicio y finalización: 2026-11-14. Implementado lookup por sender ID con timeout/caché, username automático y nombre de perfil separado del confirmado; se solicita confirmar/corregir el nombre sin pedir el handle. Migración 0005 aplicada; pruebas locales de persistencia, alias, confirmación y fallo del lookup incluidas en la suite de 78 tests correctos del PR #5. Tras una primera consulta sin datos, Manu repitió la prueba real en @dwctesthello y confirmó que funcionó. Fallback vigente según #13: pedir teléfono y solo usar un handle real conocido si la persona declara no tener teléfono/WhatsApp. |
 | 13 | Corregir el flujo de reserva tras la prueba real: bienvenida breve, día y hora explícitos, política de clases para mujeres, teléfono para WhatsApp y resumen corto. | Manu | Inicio y finalización: 2026-11-14. Implementadas selección persistente de día/hora solo desde texto de la persona, guardas contra fechas inferidas y domingos cerrados, nombre suministrado/confirmado, teléfono obligatorio salvo ausencia explícita más handle real conocido, bienvenida breve, política sin ofrecer cambiar el nombre y resumen corto con “sí/yes” y consentimiento WhatsApp. Corregidas repreguntas tras recibir el nombre/teléfono. Verificación: typecheck, 78/78 tests, validación de sintaxis del cliente y smoke real en chat protegido hasta resumen pendiente de confirmación (sin crear reserva real). Migración 0006 aplicada; versión 9a149a5c-a07d-4607-8094-7cf22c31499a desplegada. Integrados y conservados los cambios de elegibilidad de Félix tras git pull. La incidencia de consulta de perfil permanece separada en #3. |
 | 5 | Buscar al usuario en el calendario hasta un mes atrás para comprobar si ya tuvo una primera clase. | Félix | Finalizada 2026-11-14. D1 bloquea otra propuesta/reserva si encuentra una reserva confirmada en los 30 días anteriores para el mismo customer, teléfono exacto o handle de Instagram (sin distinguir mayúsculas); canceladas/fallidas y reservas fuera del intervalo no cuentan. Typecheck y 53 pruebas pasan. No se buscan eventos históricos externos que no estén registrados en D1; el registro confirma reserva, no asistencia. |
 | 7 | Programar recordatorios por WhatsApp 24 horas y 1 hora antes de la clase, si es posible. | Félix | Finalizada 2026-11-14. Añadidos recordatorios WhatsApp de 24 h y 1 h con opt-in y número; se omiten avisos cuyo horario ya pasó y ambos usan la plantilla configurada. Typecheck y 50 pruebas pasan; entrega real pendiente de la configuración WhatsApp de la tarea #6. |
