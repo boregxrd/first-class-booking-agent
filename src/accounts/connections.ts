@@ -26,6 +26,7 @@ async function json(response: Response): Promise<any> {
 
 export async function startConnection(env: Env, provider: 'google' | 'instagram', distribuidoraId: string | null) {
   if (!env.DB) throw new Error('Database required');
+  vaultFor(env); // Fail before asking a person to authorize if tokens cannot be stored safely.
   const redirectUri = callbackUrl(env, provider), state = base64url(bytes(32)), verifier = base64url(bytes(48));
   const clientId = provider === 'google' ? env.GOOGLE_OAUTH_CLIENT_ID : env.INSTAGRAM_OAUTH_CLIENT_ID;
   if (!clientId || (provider === 'google' ? !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.GOOGLE_OWNER_EMAIL : !env.INSTAGRAM_OAUTH_CLIENT_SECRET)) throw new Error('Provider OAuth is not configured');

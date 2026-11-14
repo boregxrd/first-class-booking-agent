@@ -14,6 +14,7 @@ export class CredentialVault {
   constructor(private db: D1Database, keyring: string, private activeKey: string) {
     this.keys = z.record(z.string()).parse(JSON.parse(keyring));
     if (!this.keys[activeKey]) throw new Error('Credential encryption key is not configured');
+    for (const value of Object.values(this.keys)) if (decode(value).length !== 32) throw new Error('Credential encryption keys must be 32 bytes');
   }
   private async key(id: string) {
     const value = this.keys[id];
