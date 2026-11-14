@@ -5,6 +5,7 @@ import { handleQueue } from './llm-integration/runtime/queue.js';
 import type { Env } from './types/env.js';
 import { handleScheduled } from './runtime/scheduled.js';
 import { createPrivacyRoutes } from './public/privacy.js';
+import { createAccountRoutes } from './accounts/routes.js';
 
 // Initialize Hono with Cloudflare Workers environment bindings
 const app = new Hono<{ Bindings: Env }>();
@@ -14,6 +15,7 @@ const app = new Hono<{ Bindings: Env }>();
 // ============================================================================
 app.get('/', (c) => c.text('First-Class Booking Agent (Cloudflare Worker) is running! 🚀'));
 app.route('/', createPrivacyRoutes());
+app.route('/', createAccountRoutes());
 
 // ============================================================================
 // META WEBHOOK ROUTES
