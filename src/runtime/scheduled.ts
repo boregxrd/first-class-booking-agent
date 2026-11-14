@@ -1,6 +1,5 @@
 import type { Env } from '../types/env.js';
 import { createServices } from './factory.js';
-import { reconcileCalendarSlots } from '../calendar/reconcile.js';
 import { drainInbox, resumeCompletedActions } from '../llm-integration/runtime/inbox.js';
 import { dispatchOutbox } from '../llm-integration/runtime/outbox.js';
 import { alert, resolveAlert } from '../llm-integration/runtime/persistence.js';
@@ -14,7 +13,7 @@ export async function handleScheduled(event: ScheduledEvent, env: Env): Promise<
   const tasks: Array<[string, () => Promise<unknown>]> = [
     ['delivery-recovery', async () => { await recoverDeliveries(env.DB!, 'outgoing_messages', now); await recoverDeliveries(env.DB!, 'notification_jobs', now); }],
     ['bookings', () => services.bookings.reconcilePendingOperations(1)],
-    ['calendar', () => services.calendarClient ? reconcileCalendarSlots(env.DB!, services.calendarClient, now) : Promise.resolve()],
+    ['calendar', () => services.reconcileCalendars(now)],
     ['receipts', () => services.statusHandler.reconcileStoredReceipts()],
   ];
   if (env.META_MESSAGING_MODE === 'live' || env.META_MESSAGING_MODE === 'test') tasks.push(
