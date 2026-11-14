@@ -1,6 +1,7 @@
 import type { ChannelIdentity, TemplateSendResult, WhatsAppTemplateRequest, WhatsAppTemplateSender } from '../../model.js';
 import type { Env } from '../types/env.js';
 import { canProcessMessages } from '../llm-integration/runtime/test-access.js';
+import { routedEnvironment } from '../accounts/runtime.js';
 
 export interface TextSender {
   sendText(identity: ChannelIdentity, text: string, lastInboundAt: string, now?: string, correlationId?: string): Promise<TemplateSendResult>;
@@ -33,6 +34,11 @@ function tokenError(token: string | undefined, expiry: string | undefined, now: 
 export class MetaTextSender implements TextSender {
   constructor(private readonly env: Env) {}
   async sendText(identity: ChannelIdentity, text: string, lastInboundAt: string, now = new Date().toISOString(), correlationId?: string): Promise<TemplateSendResult> {
+    if (this.env.MULTI_ACCOUNT_ENABLED === 'true') {
+      const scoped = await routedEnvironment(this.env, identity);
+      if (!scoped) return { status: 'rejected', code: 'ACCOUNT_UNAVAILABLE', retryable: true };
+      return new MetaTextSender({ ...scoped.env, MULTI_ACCOUNT_ENABLED: 'false' }).sendText(identity, text, lastInboundAt, now, correlationId);
+    }
     if (!canProcessMessages(identity, this.env)) return { status: 'rejected', code: 'SENDER_NOT_ENABLED', retryable: false };
     if (!Number.isFinite(Date.parse(lastInboundAt)) || Date.parse(now) - Date.parse(lastInboundAt) >= 24 * 60 * 60_000) {
       return { status: 'rejected', code: 'MESSAGING_WINDOW_CLOSED', retryable: false };

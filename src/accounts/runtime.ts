@@ -21,6 +21,16 @@ export async function routedEnvironment(env: Env, identity: ChannelIdentity): Pr
         META_WHATSAPP_TOKEN_EXPIRES_AT: credential.expiresAt }) } };
 }
 
+export async function reminderEnvironment(env: Env): Promise<Env | null> {
+  if (!env.DB) return null;
+  const store = new AccountStore(env.DB), id = await store.setting('reminder_sender_account_id');
+  if (!id) return null;
+  const account = await env.DB.prepare("SELECT provider_account_id,distribuidora_id FROM social_accounts WHERE id=? AND platform='whatsapp'")
+    .bind(id).first<{ provider_account_id: string; distribuidora_id: string }>();
+  if (!account || account.distribuidora_id !== (await store.setting('general_distribuidora_id') ?? 'dwc')) return null;
+  return (await routedEnvironment(env, { channel: 'whatsapp', businessAccountId: account.provider_account_id, senderId: '' }))?.env ?? null;
+}
+
 /** Owner-triggered, repeatable import. Never copies a legacy token into an arbitrary trainer account. */
 export async function bootstrapLegacyAccounts(env: Env) {
   if (!env.DB || !env.GOOGLE_CALENDAR_ID) throw new Error('Legacy calendar is not configured');
