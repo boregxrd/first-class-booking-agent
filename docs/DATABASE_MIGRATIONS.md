@@ -74,3 +74,10 @@ These SQL files are applied in numeric order to the Cloudflare D1 database confi
 - **`conversations`** gains nullable `booking_intake` JSON for the customer-selected Dallas date/hour, supplied international phone, explicit lack of phone/WhatsApp, and last update time. Only incoming customer text updates these selections; an assistant suggestion cannot supply a missing day.
 - New trial proposals must match the selected day/hour, have a customer-provided/confirmed name, and have a supplied/saved phone. Only explicit phone unavailability plus a known Instagram handle allows a phone-less proposal. A bare “sí/yes” confirms only the latest saved, unexpired summary; corrections invalidate it.
 - Apply this additive migration before the updated Worker. Older pending trial summaries without verified intake must be recreated before they can be confirmed.
+
+## `0007_distribuidoras.sql` — trainer attribution and connected accounts
+
+- Creates minimal `distribuidoras` records with inline calendar setup state and seeds Dallas Wellness Club as a normal record. No kind/position/tier table.
+- Creates `social_accounts`, separately encrypted `account_credentials`, non-secret `gym_settings`, and expiring single-use `connection_states`.
+- Adds immutable-at-booking attribution fields to `bookings` and backfills existing bookings to `dwc`. Calendar IDs already stored on bookings remain unchanged.
+- Apply before deploying the new booking writes, even while `MULTI_ACCOUNT_ENABLED=false`. The owner-triggered bootstrap attaches the configured general calendar and imports credentials; migration SQL never contains live tokens or encryption keys. See `OWNER_PORTAL.md` for activation and recovery.
