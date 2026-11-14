@@ -2,6 +2,19 @@
  * Cloudflare Worker Environment Bindings
  */
 export interface Env {
+  MULTI_ACCOUNT_ENABLED?: string;
+  ACCOUNT_CREDENTIAL_KEYS?: string;
+  ACCOUNT_CREDENTIAL_ACTIVE_KEY?: string;
+  ADMIN_API_TOKEN?: string;
+  ADMIN_ORIGIN?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
+  OWNER_EMAILS?: string;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  GOOGLE_OWNER_EMAIL?: string;
+  INSTAGRAM_OAUTH_CLIENT_ID?: string;
+  INSTAGRAM_OAUTH_CLIENT_SECRET?: string;
   // Environment Variables & Secrets
   META_VERIFY_TOKEN: string;
   META_APP_SECRET: string;
