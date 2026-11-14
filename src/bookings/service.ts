@@ -209,8 +209,12 @@ export class D1BookingService implements BookingService {
       ];
       // Notification jobs stay per prospect, not per shared Calendar event.
       if (booking.status === 'confirmed') {
-        const reminderAt = new Date(Math.max(Date.parse(booking.startsAt) - 24 * 60 * 60_000, Date.parse(timestamp))).toISOString();
-        for (const [kind, due] of [['confirmation', timestamp], ['reminder', reminderAt]]) {
+        const notifications: Array<[string, string]> = [['confirmation', timestamp]];
+        for (const [kind, leadTimeMs] of [['reminder', 24 * 60 * 60_000], ['reminder_1h', 60 * 60_000]] as const) {
+          const due = new Date(Date.parse(booking.startsAt) - leadTimeMs).toISOString();
+          if (due >= timestamp) notifications.push([kind, due]);
+        }
+        for (const [kind, due] of notifications) {
           statements.push(this.db.prepare(
             `INSERT INTO notification_jobs (id, booking_id, booking_revision, kind, scheduled_at, state, created_at, updated_at)
              SELECT ?, b.id, b.revision, ?, ?, 'pending', ?, ? FROM bookings b JOIN customers c ON c.id = b.customer_id

@@ -30,7 +30,8 @@ Delivery progresses `pending → leased → sending → accepted`, with `failed`
 - WhatsApp callback correlation IDs allow early receipts to resolve sending/unknown records. Receipt processing deduplicates events and never regresses delivered/read to a late failure.
 - Unknown/failed chat replies block later replies in that conversation to avoid sending them out of order. Inspect provider history first. If delivery is verified, record the provider ID and accepted state; if non-delivery is verified and the window is still open, an operator may retry. If unresolved, obtain customer re-engagement and resolve deliberately rather than promising exactly-once delivery.
 - Standard text replies require a recent incoming message within 24 hours. Outside that window, a text send fails rather than silently using an unapproved template.
-- A reminder rechecks booking revision, future time, latest matching consent, pending mutations and the shared Calendar event. A cancellation either cancels a leased job or receives a retryable result while a send is already in flight. It must not claim a message was retracted after the send started.
+- Customers with a WhatsApp number and current opt-in receive WhatsApp confirmation and reminders scheduled 24 hours and 1 hour before class. A reminder whose scheduled time has already passed when the booking is confirmed is omitted.
+- Each reminder rechecks booking revision, future time, latest matching consent, pending mutations and the shared Calendar event. A cancellation either cancels a leased job or receives a retryable result while a send is already in flight. It must not claim a message was retracted after the send started.
 
 ## Shared Calendar owner-edit policy
 

@@ -6,11 +6,11 @@ Backlog compartido de Manu y Félix (Bangfeal). Este archivo es la fuente de ver
 
 | Estado | Tareas |
 |---|---:|
-| Todo | 12 |
+| Todo | 11 |
 | In progress | 0 |
-| Finished | 0 |
+| Finished | 1 |
 
-Los estados iniciales reflejan el trabajo pendiente acordado; todavía no se ha verificado su implementación en el código.
+El estado y la verificación de cada tarea se reflejan en su sección y notas; las tareas en Todo siguen pendientes de verificación.
 
 ## Todo
 
@@ -22,7 +22,6 @@ Los estados iniciales reflejan el trabajo pendiente acordado; todavía no se ha 
 | 4 | Enviar el mensaje de confirmación solo cuando la reserva esté confirmada. | Félix | Pendiente. |
 | 5 | Buscar al usuario en el calendario hasta un mes atrás para comprobar si ya tuvo una primera clase. | Félix | Pendiente. |
 | 6 | Conectar WhatsApp mediante el número de teléfono. | Manu | Pendiente. |
-| 7 | Programar recordatorios por WhatsApp 24 horas y 1 hora antes de la clase, si es posible. | Félix | Pendiente. |
 | 8 | Implementar soporte para varias cuentas con un contexto y calendario compartidos. | Manu | Pendiente. |
 | 9 | Definir e implementar los perfiles de distribuidoras y su almacenamiento. | Manu | Pendiente. |
 | 10 | Integrar los DMs de TikTok como canal de conversación, igual que WhatsApp e Instagram. | Por asignar | Pendiente. |
@@ -38,6 +37,7 @@ Los estados iniciales reflejan el trabajo pendiente acordado; todavía no se ha 
 
 | ID | Tarea | Responsable | Resultado / verificación |
 |---|---|---|---|
+| 7 | Programar recordatorios por WhatsApp 24 horas y 1 hora antes de la clase, si es posible. | Félix | Finalizada 2026-11-14. Añadidos recordatorios WhatsApp de 24 h y 1 h con opt-in y número; se omiten avisos cuyo horario ya pasó y ambos usan la plantilla configurada. Typecheck y 50 pruebas pasan; entrega real pendiente de la configuración WhatsApp de la tarea #6. |
 
 ## Cómo mantenerlo actualizado
 
