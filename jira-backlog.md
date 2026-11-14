@@ -6,8 +6,8 @@ Backlog compartido de Manu y Félix (Bangfeal). Este archivo es la fuente de ver
 
 | Estado | Tareas |
 |---|---:|
-| Todo | 8 |
-| In progress | 0 |
+| Todo | 6 |
+| In progress | 3 |
 | Finished | 5 |
 
 El estado y la verificación de cada tarea se reflejan en su sección y notas; las tareas en Todo siguen pendientes de verificación.
@@ -19,8 +19,6 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 | 2 | Pulir el lenguaje del bot para que suene más natural. | Félix | Pendiente. |
 | 4 | Enviar el mensaje de confirmación solo cuando la reserva esté confirmada. | Félix | Pendiente. |
 | 6 | Conectar WhatsApp mediante el número de teléfono. | Manu | Pendiente. |
-| 8 | Implementar soporte para varias cuentas con un contexto y calendario compartidos. | Manu | Pendiente. |
-| 9 | Definir e implementar los perfiles de distribuidoras y su almacenamiento. | Manu | Pendiente. |
 | 10 | Integrar los DMs de TikTok como canal de conversación, igual que WhatsApp e Instagram. | Félix | Pendiente. Asignada a Félix por Manu el 2026-11-14. |
 | 11 | Automatizar mensajes privados a partir de comentarios con palabras clave en Instagram. | Por asignar | Pendiente; dejar para el final. |
 | 12 | Automatizar mensajes privados a partir de comentarios con palabras clave en TikTok. | Por asignar | Pendiente; dejar para el final. |
@@ -29,6 +27,9 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 
 | ID | Tarea | Responsable | Progreso / notas |
 |---|---|---|---|
+| 9 | Definir e implementar los perfiles de distribuidoras y su almacenamiento. | Manu | Inicio: 2026-11-14. Perfiles mínimos (nombre/email/activo), calendario por registro y DWC como registro normal; sin kind/position/tier. Ver docs/MULTI_ACCOUNT_PLAN.md. |
+| 14 | Implementar portal de onboarding, credenciales multicuenta y creación/compartición automática de calendarios. | Manu | Inicio: 2026-11-14. Portal de propietarios, OAuth Google/Instagram, credenciales cifradas, invitaciones de conexión y recuperación de aprovisionamiento; interfaz extensible para TikTok/WhatsApp. Autorizaciones reales pendientes. |
+| 8 | Implementar soporte para varias cuentas con contexto compartido y calendario de atribución por distribuidora. | Manu | Inicio: 2026-11-14. Resolver cuenta receptora, preservar atribución/calendario de reservas, responder desde la cuenta origen y centralizar recordatorios en WhatsApp DWC. |
 
 ## Finished
 
