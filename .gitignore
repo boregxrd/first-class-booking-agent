@@ -9,3 +9,5 @@ dist/
 /dwc-booking-test-*.json
 /.direct-chat-token
 /.owner-credentials.json
+/google-oauth-client.json
+/client_secret_*.json
