@@ -121,7 +121,13 @@ test('owner portal APIs hide credentials and create recoverable profiles when Go
     assert.equal(create.status, 202);
     assert.equal((await create.json() as { setupPending: boolean }).setupPending, true);
     const list = await app.request('/admin/api/overview', { headers }, env);
-    assert.equal(list.status, 200); assert.doesNotMatch(await list.text(), /encrypted_payload|accessToken|refreshToken/);
+    assert.equal(list.status, 200);
+    const overview = await list.json() as { setup: { googleOAuthConfigured: boolean } };
+    assert.equal(overview.setup.googleOAuthConfigured, false);
+    assert.doesNotMatch(JSON.stringify(overview), /encrypted_payload|accessToken|refreshToken/);
+    const google = await app.request('/admin/api/connections/start', { method: 'POST', headers, body: JSON.stringify({ provider: 'google' }) }, env);
+    assert.equal(google.status, 503);
+    assert.match((await google.json() as { error: string }).error, /Google OAuth is not configured/);
     assert.equal((await app.request('/admin/api/bootstrap', { method: 'POST', headers: { ...headers, Origin: 'https://evil.example' }, body: '{}' }, env)).status, 401);
     const script = await app.request('/admin/app.js', {}, env);
     const source = await script.text();

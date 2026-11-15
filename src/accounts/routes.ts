@@ -32,7 +32,8 @@ export function createAccountRoutes() {
   routes.get('/admin/api/overview', async (c) => {
     const store = new AccountStore(c.env.DB!);
     return c.json({ profiles: await store.list(), accounts: await store.publicAccounts(), reminderSender: await store.setting('reminder_sender_account_id'),
-      generalProfileId: await store.setting('general_distribuidora_id') ?? 'dwc', multiAccountEnabled: c.env.MULTI_ACCOUNT_ENABLED === 'true' });
+      generalProfileId: await store.setting('general_distribuidora_id') ?? 'dwc', multiAccountEnabled: c.env.MULTI_ACCOUNT_ENABLED === 'true',
+      setup: { googleOAuthConfigured: Boolean(c.env.GOOGLE_OAUTH_CLIENT_ID && c.env.GOOGLE_OAUTH_CLIENT_SECRET && c.env.GOOGLE_OWNER_EMAIL) } });
   });
   routes.post('/admin/api/profiles', async (c) => {
     const profile = await new AccountStore(c.env.DB!).create(await c.req.json(), c.req.header('Idempotency-Key'));
@@ -60,6 +61,9 @@ export function createAccountRoutes() {
   });
   routes.post('/admin/api/connections/start', async (c) => {
     const input = z.object({ provider: z.enum(['google', 'instagram']), distribuidoraId: z.string().min(1).optional() }).strict().parse(await c.req.json());
+    if (input.provider === 'google' && (!c.env.GOOGLE_OAUTH_CLIENT_ID || !c.env.GOOGLE_OAUTH_CLIENT_SECRET || !c.env.GOOGLE_OWNER_EMAIL)) {
+      return c.json({ error: 'Google OAuth is not configured. Create a Web application client and import its downloaded JSON with scripts/owner.mjs --google-client <path>.' }, 503);
+    }
     return c.json(await startConnection(c.env, input.provider, input.distribuidoraId ?? null));
   });
   routes.post('/admin/api/profiles/:id/whatsapp', async (c) => {
