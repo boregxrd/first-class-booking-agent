@@ -29,6 +29,11 @@ if (process.argv.includes('--setup')) {
   if (!secrets.some((secret) => secret.name === 'ADMIN_API_TOKEN')) wrangler(['secret', 'put', 'ADMIN_API_TOKEN'], local.adminToken);
   if (!secrets.some((secret) => secret.name === 'ACCOUNT_CREDENTIAL_KEYS')) wrangler(['secret', 'put', 'ACCOUNT_CREDENTIAL_KEYS'], JSON.stringify(local.keyring));
   console.log('Owner secrets installed if missing; existing remote secrets were preserved. Private backup: .owner-credentials.json (ignored, mode 0600). Back it up securely. No credential values are printed.');
+} else if (process.argv[2] === '--copy-token') {
+  if (typeof local?.adminToken !== 'string' || local.adminToken.length < 32) throw new Error('Restore the private owner backup first.');
+  const copied = spawnSync('pbcopy', [], { input: local.adminToken, encoding: 'utf8', timeout: 10_000 });
+  if (copied.status !== 0) throw new Error('Could not copy the owner token. This command requires the Mac pbcopy utility.');
+  console.log('Owner token copied to the Mac clipboard without displaying it. Paste into Operator token and click Load portal. The encryption key was not copied.');
 } else if (process.argv[2] === '--google-client') {
   const filename = process.argv[3];
   if (!filename) throw new Error('Usage: node scripts/owner.mjs --google-client /path/to/downloaded-client.json');
@@ -61,7 +66,7 @@ if (process.argv.includes('--setup')) {
     routes[command] = command === '--inspect-calendar' ? [`/profiles/${encodeURIComponent(process.argv[3])}/calendar`]
       : [`/profiles/${encodeURIComponent(process.argv[3])}/provision`, {}];
   }
-  if (!routes[command]) throw new Error('Use --setup, --google-client <downloaded-json>, --status, --bootstrap, --google, --create-profile, --inspect-calendar or --provision.');
+  if (!routes[command]) throw new Error('Use --setup, --copy-token, --google-client <downloaded-json>, --status, --bootstrap, --google, --create-profile, --inspect-calendar or --provision.');
   const [route, body] = routes[command];
   const response = await fetch(new URL(`/admin/api${route}`, base), { method: body ? 'POST' : 'GET',
     headers: { Authorization: `Bearer ${local.adminToken}`, 'Content-Type': 'application/json', ...(requestId ? { 'Idempotency-Key': requestId } : {}) },
