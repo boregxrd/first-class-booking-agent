@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
@@ -49,10 +49,22 @@ if (process.argv.includes('--setup')) {
   if (!local?.adminToken) throw new Error('Run node scripts/owner.mjs --setup first, or restore the private owner backup.');
   const command = process.argv[2] ?? '--status';
   const routes = { '--status': ['/overview'], '--bootstrap': ['/bootstrap', {}], '--google': ['/connections/start', { provider: 'google' }] };
-  if (!routes[command]) throw new Error('Use --setup, --google-client <downloaded-json>, --status, --bootstrap or --google. The Google command prints only an expiring authorization link.');
+  let requestId;
+  if (command === '--create-profile') {
+    if (!process.argv[3] || !process.argv[4]) throw new Error('Usage: --create-profile <name> <email> [request-id-to-reuse-on-retry]');
+    requestId = process.argv[5] ?? randomUUID();
+    console.error(`Profile creation request ID (reuse on retry): ${requestId}`);
+    routes[command] = ['/profiles', { name: process.argv[3], email: process.argv[4] }];
+  }
+  if (['--inspect-calendar', '--provision'].includes(command)) {
+    if (!process.argv[3]) throw new Error(`Usage: ${command} <profile-id>`);
+    routes[command] = command === '--inspect-calendar' ? [`/profiles/${encodeURIComponent(process.argv[3])}/calendar`]
+      : [`/profiles/${encodeURIComponent(process.argv[3])}/provision`, {}];
+  }
+  if (!routes[command]) throw new Error('Use --setup, --google-client <downloaded-json>, --status, --bootstrap, --google, --create-profile, --inspect-calendar or --provision.');
   const [route, body] = routes[command];
   const response = await fetch(new URL(`/admin/api${route}`, base), { method: body ? 'POST' : 'GET',
-    headers: { Authorization: `Bearer ${local.adminToken}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${local.adminToken}`, 'Content-Type': 'application/json', ...(requestId ? { 'Idempotency-Key': requestId } : {}) },
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60_000) });
   const data = await response.json();
   if (!response.ok) throw new Error(`Owner request failed (${response.status}): ${data.error ?? 'check configuration'}`);
