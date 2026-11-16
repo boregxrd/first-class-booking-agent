@@ -4,6 +4,7 @@ import { AccountStore, type Platform } from './store.js';
 import { vaultFor } from './runtime.js';
 import { withLease } from '../llm-integration/runtime/persistence.js';
 import type { CredentialPayload } from './credentials.js';
+import { AccountAssignmentError, ConnectionFailure, providerFailure, type ConnectionStage } from './connection-errors.js';
 
 export interface ConnectedProviderAccount { providerAccountId: string; handle: string | null; credentials: CredentialPayload }
 /** Extension boundary for Félix: login alone must not be reported as messaging access. */
@@ -19,9 +20,14 @@ export function callbackUrl(env: Env, provider: 'google' | 'instagram') {
   if (origin.protocol !== 'https:' || origin.pathname !== '/' || origin.search || origin.hash) throw new Error('Canonical HTTPS ADMIN_ORIGIN required');
   return `${origin.origin}/connections/callback/${provider}`;
 }
-async function json(response: Response): Promise<any> {
-  if (!response.ok) throw new Error(`Provider authorization failed (${response.status})`);
-  return response.json();
+async function json(response: Response, stage?: ConnectionStage): Promise<any> {
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (stage) throw providerFailure(stage, response.status, body);
+    throw new Error(`Provider authorization failed (${response.status})`);
+  }
+  if (body === null && stage) throw new ConnectionFailure(stage, 'invalid_response');
+  return body;
 }
 
 export async function startConnection(env: Env, provider: 'google' | 'instagram', distribuidoraId: string | null) {
@@ -52,7 +58,7 @@ export async function saveMessagingConnection(env: Env, platform: Platform, dist
     if (!(await new AccountStore(env.DB!).get(distribuidoraId))?.active) throw new Error('Active distribuidora required');
     const previous = await env.DB!.prepare('SELECT id,distribuidora_id FROM social_accounts WHERE platform=? AND provider_account_id=?')
       .bind(platform, account.providerAccountId).first<{ id: string; distribuidora_id: string }>();
-    if (previous && previous.distribuidora_id !== distribuidoraId) throw new Error('Account already belongs to another distribuidora; explicit reassignment is required');
+    if (previous && previous.distribuidora_id !== distribuidoraId) throw new AccountAssignmentError();
     const id = previous?.id ?? `${platform}:${account.providerAccountId}`, credentialId = `social:${id}`, now = new Date().toISOString();
     await vaultFor(env).put(credentialId, account.credentials, lease.fence);
     await env.DB!.batch([lease.fence(), env.DB!.prepare(`INSERT INTO social_accounts (id,distribuidora_id,platform,provider_account_id,handle,status,credential_id,token_expires_at,created_at,updated_at)
@@ -64,11 +70,12 @@ export async function saveMessagingConnection(env: Env, platform: Platform, dist
 }
 
 export async function completeConnection(env: Env, provider: 'google' | 'instagram', state: string, code: string, request: typeof fetch = fetch) {
-  if (!env.DB || state.length > 128 || !code || code.length > 4096) throw new Error('Invalid authorization callback');
+  if (!env.DB || state.length > 128 || !code || code.length > 4096) throw provider === 'instagram'
+    ? new ConnectionFailure('callback', 'invalid_callback') : new Error('Invalid authorization callback');
   const row = await env.DB.prepare(`UPDATE connection_states SET used_at=? WHERE state_hash=? AND provider=? AND used_at IS NULL AND expires_at>?
     RETURNING distribuidora_id,verifier`).bind(new Date().toISOString(), await stateHash(state), provider, new Date().toISOString())
     .first<{ distribuidora_id: string | null; verifier: string }>();
-  if (!row) throw new Error('Authorization link expired or was already used');
+  if (!row) throw provider === 'instagram' ? new ConnectionFailure('state', 'state_expired_or_used') : new Error('Authorization link expired or was already used');
   const redirectUri = callbackUrl(env, provider);
   if (provider === 'google') {
     const token = await json(await request('https://oauth2.googleapis.com/token', { method: 'POST', signal: AbortSignal.timeout(15_000),
@@ -92,23 +99,41 @@ export async function completeConnection(env: Env, provider: 'google' | 'instagr
     return;
   }
   if (!row.distribuidora_id) throw new Error('Missing distribuidora');
-  const short = await json(await request('https://api.instagram.com/oauth/access_token', { method: 'POST', signal: AbortSignal.timeout(15_000),
-    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri,
-      client_id: env.INSTAGRAM_OAUTH_CLIENT_ID!, client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET! }) }));
-  const shortToken = z.string().min(1).parse(short.access_token);
-  const exchange = new URL('https://graph.instagram.com/access_token');
-  exchange.search = new URLSearchParams({ grant_type: 'ig_exchange_token', client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET!, access_token: shortToken }).toString();
-  const long = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() }).parse(await json(await request(exchange, { signal: AbortSignal.timeout(15_000) })));
-  const version = env.META_GRAPH_API_VERSION;
-  if (!/^v\d+\.\d+$/.test(version ?? '')) throw new Error('Meta API version required');
-  const user = await json(await request(`https://graph.instagram.com/${version}/me?fields=user_id,username`, { headers: { Authorization: `Bearer ${long.access_token}` }, signal: AbortSignal.timeout(15_000) }));
-  const providerId = z.string().regex(/^\d+$/).parse(String(user.user_id ?? ''));
-  const handle = z.string().regex(/^[a-zA-Z0-9._]{1,30}$/).parse(user.username);
-  const subscription = await json(await request(`https://graph.instagram.com/${version}/${providerId}/subscribed_apps`, { method: 'POST',
-    headers: { Authorization: `Bearer ${long.access_token}` }, body: new URLSearchParams({ subscribed_fields: 'messages' }), signal: AbortSignal.timeout(15_000) }));
-  if (subscription.success !== true) throw new Error('Messaging subscription could not be verified');
-  await saveMessagingConnection(env, 'instagram', row.distribuidora_id, { providerAccountId: providerId, handle,
-    credentials: { accessToken: long.access_token, expiresAt: new Date(Date.now() + long.expires_in * 1000).toISOString(), scopes: ['instagram_business_basic', 'instagram_business_manage_messages'] } });
+  let stage: ConnectionStage = 'short_token';
+  let providerAccountId: string | undefined;
+  try {
+    const short = await json(await request('https://api.instagram.com/oauth/access_token', { method: 'POST', signal: AbortSignal.timeout(15_000),
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri,
+        client_id: env.INSTAGRAM_OAUTH_CLIENT_ID!, client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET! }) }), stage);
+    const shortSchema = z.object({ access_token: z.string().min(1) });
+    // Instagram responses may be flat or wrapped in a single-entry data array.
+    const shortToken = z.union([shortSchema, z.object({ data: z.array(shortSchema).length(1) }).transform((value) => value.data[0]!)]).parse(short).access_token;
+    stage = 'long_token';
+    const exchange = new URL('https://graph.instagram.com/access_token');
+    exchange.search = new URLSearchParams({ grant_type: 'ig_exchange_token', client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET!, access_token: shortToken }).toString();
+    const long = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() }).parse(await json(await request(exchange, { signal: AbortSignal.timeout(15_000) }), stage));
+    const version = env.META_GRAPH_API_VERSION;
+    if (!/^v\d+\.\d+$/.test(version ?? '')) throw new Error('Meta API version required');
+    stage = 'account_identity';
+    const user = await json(await request(`https://graph.instagram.com/${version}/me?fields=user_id,username`, { headers: { Authorization: `Bearer ${long.access_token}` }, signal: AbortSignal.timeout(15_000) }), stage);
+    const providerId = z.string().regex(/^\d+$/).parse(String(user.user_id ?? ''));
+    providerAccountId = providerId;
+    const handle = z.string().regex(/^[a-zA-Z0-9._]{1,30}$/).parse(user.username);
+    stage = 'messaging_subscription';
+    const subscription = await json(await request(`https://graph.instagram.com/${version}/${providerId}/subscribed_apps`, { method: 'POST',
+      headers: { Authorization: `Bearer ${long.access_token}` }, body: new URLSearchParams({ subscribed_fields: 'messages' }), signal: AbortSignal.timeout(15_000) }), stage);
+    if (subscription.success !== true) throw new ConnectionFailure(stage, 'invalid_response');
+    stage = 'save_account';
+    await saveMessagingConnection(env, 'instagram', row.distribuidora_id, { providerAccountId: providerId, handle,
+      credentials: { accessToken: long.access_token, expiresAt: new Date(Date.now() + long.expires_in * 1000).toISOString(), scopes: ['instagram_business_basic', 'instagram_business_manage_messages'] } });
+  } catch (error) {
+    const failure = error instanceof ConnectionFailure ? error : new ConnectionFailure(stage,
+      error instanceof AccountAssignmentError ? 'account_already_assigned' : error instanceof z.ZodError ? 'invalid_response' : 'network_or_internal');
+    failure.validatedState = true;
+    failure.distribuidoraId = row.distribuidora_id;
+    failure.providerAccountId = providerAccountId;
+    throw failure;
+  }
 }
 
 /** Connect an existing Cloud API number, not an arbitrary personal WhatsApp number. */
