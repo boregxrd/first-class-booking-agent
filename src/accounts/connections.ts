@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Env } from '../types/env.js';
 import { AccountStore, type Platform } from './store.js';
 import { vaultFor } from './runtime.js';
-import { withLease } from '../llm-integration/runtime/persistence.js';
+import { withLease, resolveAlert } from '../llm-integration/runtime/persistence.js';
 import type { CredentialPayload } from './credentials.js';
 import { AccountAssignmentError, ConnectionFailure, providerFailure, type ConnectionStage } from './connection-errors.js';
 
@@ -20,10 +20,10 @@ export function callbackUrl(env: Env, provider: 'google' | 'instagram') {
   if (origin.protocol !== 'https:' || origin.pathname !== '/' || origin.search || origin.hash) throw new Error('Canonical HTTPS ADMIN_ORIGIN required');
   return `${origin.origin}/connections/callback/${provider}`;
 }
-async function json(response: Response, stage?: ConnectionStage): Promise<any> {
+async function json(response: Response, stage?: ConnectionStage, sensitiveValues: readonly string[] = []): Promise<any> {
   const body = await response.json().catch(() => null);
   if (!response.ok) {
-    if (stage) throw providerFailure(stage, response.status, body);
+    if (stage) throw providerFailure(stage, response.status, body, sensitiveValues);
     throw new Error(`Provider authorization failed (${response.status})`);
   }
   if (body === null && stage) throw new ConnectionFailure(stage, 'invalid_response');
@@ -99,41 +99,101 @@ export async function completeConnection(env: Env, provider: 'google' | 'instagr
     return;
   }
   if (!row.distribuidora_id) throw new Error('Missing distribuidora');
-  let stage: ConnectionStage = 'short_token';
-  let providerAccountId: string | undefined;
+  let shortToken: string, shortTokenExpiresIn: number | undefined;
   try {
     const short = await json(await request('https://api.instagram.com/oauth/access_token', { method: 'POST', signal: AbortSignal.timeout(15_000),
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri,
-        client_id: env.INSTAGRAM_OAUTH_CLIENT_ID!, client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET! }) }), stage);
-    const shortSchema = z.object({ access_token: z.string().min(1) });
-    // Instagram responses may be flat or wrapped in a single-entry data array.
-    const shortToken = z.union([shortSchema, z.object({ data: z.array(shortSchema).length(1) }).transform((value) => value.data[0]!)]).parse(short).access_token;
-    stage = 'long_token';
-    const exchange = new URL('https://graph.instagram.com/access_token');
-    exchange.search = new URLSearchParams({ grant_type: 'ig_exchange_token', client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET!, access_token: shortToken }).toString();
-    const long = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() }).parse(await json(await request(exchange, { signal: AbortSignal.timeout(15_000) }), stage));
+        client_id: env.INSTAGRAM_OAUTH_CLIENT_ID!, client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET! }) }), 'short_token', [env.INSTAGRAM_OAUTH_CLIENT_SECRET!, code, state]);
+    const shortSchema = z.object({ access_token: z.string().min(1), expires_in: z.unknown().optional() });
+    const value = z.union([shortSchema, z.object({ data: z.array(shortSchema).length(1) }).transform((data) => data.data[0]!)]).parse(short);
+    shortToken = value.access_token;
+    const ttl = Number(value.expires_in);
+    if (Number.isFinite(ttl) && ttl > 0) shortTokenExpiresIn = ttl;
+  } catch (error) {
+    const failure = error instanceof ConnectionFailure ? error : new ConnectionFailure('short_token', error instanceof z.ZodError ? 'invalid_response' : 'network_or_internal');
+    failure.validatedState = true; failure.distribuidoraId = row.distribuidora_id; throw failure;
+  }
+  try {
+    return await finishInstagramToken(env, row.distribuidora_id, { kind: 'short', accessToken: shortToken,
+      ...(shortTokenExpiresIn ? { expiresAt: new Date(Date.now() + shortTokenExpiresIn * 1000).toISOString() } : {}) }, request, [code, state]);
+  } catch (error) {
+    if (error instanceof ConnectionFailure && shortTokenExpiresIn) error.details.shortTokenExpiresIn = shortTokenExpiresIn;
+    throw error;
+  }
+}
+
+async function finishInstagramToken(env: Env, profileId: string, input: { kind: 'short' | 'long'; accessToken: string; expiresAt?: string; resumeUntil?: string },
+  request: typeof fetch, extraSecrets: readonly string[] = []) {
+  let stage: ConnectionStage = input.kind === 'short' ? 'long_token' : 'account_identity';
+  let providerAccountId: string | undefined;
+  let token = input;
+  const secrets = [env.INSTAGRAM_OAUTH_CLIENT_SECRET!, input.accessToken, ...extraSecrets];
+  try {
+    if (token.kind === 'short') {
+      stage = 'long_token';
+      const exchange = new URL('https://graph.instagram.com/access_token');
+      exchange.search = new URLSearchParams({ grant_type: 'ig_exchange_token', client_secret: env.INSTAGRAM_OAUTH_CLIENT_SECRET!, access_token: token.accessToken }).toString();
+      const long = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() })
+        .parse(await json(await request(exchange, { signal: AbortSignal.timeout(15_000) }), stage, secrets));
+      token = { ...token, kind: 'long', accessToken: long.access_token, expiresAt: new Date(Date.now() + long.expires_in * 1000).toISOString() };
+      secrets.push(token.accessToken);
+    }
     const version = env.META_GRAPH_API_VERSION;
     if (!/^v\d+\.\d+$/.test(version ?? '')) throw new Error('Meta API version required');
     stage = 'account_identity';
-    const user = await json(await request(`https://graph.instagram.com/${version}/me?fields=user_id,username`, { headers: { Authorization: `Bearer ${long.access_token}` }, signal: AbortSignal.timeout(15_000) }), stage);
+    const user = await json(await request(`https://graph.instagram.com/${version}/me?fields=user_id,username`, { headers: { Authorization: `Bearer ${token.accessToken}` }, signal: AbortSignal.timeout(15_000) }), stage, secrets);
     const providerId = z.string().regex(/^\d+$/).parse(String(user.user_id ?? ''));
     providerAccountId = providerId;
     const handle = z.string().regex(/^[a-zA-Z0-9._]{1,30}$/).parse(user.username);
     stage = 'messaging_subscription';
     const subscription = await json(await request(`https://graph.instagram.com/${version}/${providerId}/subscribed_apps`, { method: 'POST',
-      headers: { Authorization: `Bearer ${long.access_token}` }, body: new URLSearchParams({ subscribed_fields: 'messages' }), signal: AbortSignal.timeout(15_000) }), stage);
+      headers: { Authorization: `Bearer ${token.accessToken}` }, body: new URLSearchParams({ subscribed_fields: 'messages' }), signal: AbortSignal.timeout(15_000) }), stage, secrets);
     if (subscription.success !== true) throw new ConnectionFailure(stage, 'invalid_response');
     stage = 'save_account';
-    await saveMessagingConnection(env, 'instagram', row.distribuidora_id, { providerAccountId: providerId, handle,
-      credentials: { accessToken: long.access_token, expiresAt: new Date(Date.now() + long.expires_in * 1000).toISOString(), scopes: ['instagram_business_basic', 'instagram_business_manage_messages'] } });
+    return await saveMessagingConnection(env, 'instagram', profileId, { providerAccountId: providerId, handle,
+      credentials: { accessToken: token.accessToken, expiresAt: token.expiresAt, scopes: ['instagram_business_basic', 'instagram_business_manage_messages'] } });
   } catch (error) {
     const failure = error instanceof ConnectionFailure ? error : new ConnectionFailure(stage,
       error instanceof AccountAssignmentError ? 'account_already_assigned' : error instanceof z.ZodError ? 'invalid_response' : 'network_or_internal');
     failure.validatedState = true;
-    failure.distribuidoraId = row.distribuidora_id;
+    failure.distribuidoraId = profileId;
     failure.providerAccountId = providerAccountId;
+    if (failure.kind !== 'account_already_assigned') {
+      try {
+        const resumeUntil = input.resumeUntil ?? new Date(Date.now() + 600_000).toISOString();
+        const checkpointId = `instagram-pending:${profileId}:${crypto.randomUUID()}`;
+        await vaultFor(env).put(checkpointId, { accessToken: token.accessToken, ...(token.expiresAt ? { expiresAt: token.expiresAt } : {}),
+          checkpoint: { provider: 'instagram', distribuidoraId: profileId, kind: token.kind, resumeUntil } });
+        failure.checkpointId = checkpointId;
+      } catch { /* Preserve the original safe failure if checkpoint storage is unavailable. */ }
+    }
     throw failure;
   }
+}
+
+export class ConnectionRetryError extends Error {}
+export async function retryInstagramConnection(env: Env, reference: string, request: typeof fetch = fetch) {
+  if (!env.DB) throw new ConnectionRetryError('Database required');
+  if (!env.INSTAGRAM_OAUTH_CLIENT_ID || !env.INSTAGRAM_OAUTH_CLIENT_SECRET) throw new ConnectionRetryError('Configure the Instagram app credentials before retrying');
+  const row = await env.DB.prepare("SELECT detail FROM operational_alerts WHERE kind='instagram_connection_failed' AND resource_id=?")
+    .bind(reference).first<{ detail: string }>();
+  if (!row) throw new ConnectionRetryError('Diagnostic reference not found');
+  const detail = z.object({ distribuidoraId: z.string(), checkpointId: z.string().optional() }).parse(JSON.parse(row.detail));
+  if (!detail.checkpointId?.startsWith(`instagram-pending:${detail.distribuidoraId}:`)) throw new ConnectionRetryError('This attempt has no encrypted retry checkpoint. A fresh invitation is required.');
+  return withLease(env.DB, `resume:${detail.checkpointId}`, async () => {
+    const value = await vaultFor(env).get(detail.checkpointId!);
+    const checkpoint = value?.checkpoint;
+    if (!value || !checkpoint || checkpoint.provider !== 'instagram' || checkpoint.distribuidoraId !== detail.distribuidoraId
+      || Date.parse(checkpoint.resumeUntil) <= Date.now() || (value.expiresAt && Date.parse(value.expiresAt) <= Date.now())) {
+      throw new ConnectionRetryError('The encrypted retry checkpoint expired. A fresh invitation is required.');
+    }
+    if (!(await new AccountStore(env.DB!).get(detail.distribuidoraId))?.active) throw new ConnectionRetryError('This distribuidora is inactive');
+    const accountId = await finishInstagramToken(env, detail.distribuidoraId, { kind: checkpoint.kind, accessToken: value.accessToken,
+      expiresAt: value.expiresAt, resumeUntil: checkpoint.resumeUntil }, request);
+    await env.DB!.prepare('DELETE FROM account_credentials WHERE id=?').bind(detail.checkpointId!).run();
+    await resolveAlert(env.DB!, 'instagram_connection_failed', reference);
+    return { accountId, distribuidoraId: detail.distribuidoraId };
+  });
 }
 
 /** Connect an existing Cloud API number, not an arbitrary personal WhatsApp number. */

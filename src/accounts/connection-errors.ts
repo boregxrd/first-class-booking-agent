@@ -7,8 +7,9 @@ export class ConnectionFailure extends Error {
   validatedState = false;
   distribuidoraId?: string;
   providerAccountId?: string;
+  checkpointId?: string;
   constructor(readonly stage: ConnectionStage, readonly kind: ConnectionFailureKind,
-    readonly details: { httpStatus?: number; providerCode?: number; providerSubcode?: number; category?: ProviderCategory } = {}) {
+    readonly details: { httpStatus?: number; providerCode?: number; providerSubcode?: number; category?: ProviderCategory; providerSummary?: string; shortTokenExpiresIn?: number } = {}) {
     super(`Instagram connection failed at ${stage}: ${kind}`);
   }
   publicMessage() {
@@ -28,14 +29,22 @@ export class AccountAssignmentError extends Error {
 }
 
 function number(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) ? value : undefined; }
-export function providerFailure(stage: ConnectionStage, status: number, body: unknown) {
+export function providerFailure(stage: ConnectionStage, status: number, body: unknown, sensitiveValues: readonly string[] = []) {
   const data = body && typeof body === 'object' ? body as Record<string, any> : {};
   const error = data.error && typeof data.error === 'object' ? data.error : data;
-  // Read the text only to classify into fixed categories; never store or echo the text itself.
-  const text = [error.message, data.error_message, typeof data.error === 'string' ? data.error : ''].filter((part) => typeof part === 'string').join(' ').toLowerCase();
+  const message = [error.message, data.error_description, data.error_message, typeof data.error === 'string' ? data.error : ''].filter((part) => typeof part === 'string').join(' ');
+  const text = message.toLowerCase();
   const category: ProviderCategory = /redirect.?uri|redirect url/.test(text) ? 'redirect_uri'
     : /client.?secret|invalid client|app.?secret|client credentials|invalid platform app|invalid app/.test(text) ? 'client_credentials'
       : /authorization code|code (?:has been|was) used|invalid code|code.*expired/.test(text) ? 'authorization_code'
         : /permission|not authorized|insufficient|professional account/.test(text) ? 'permissions' : 'unknown';
-  return new ConnectionFailure(stage, 'provider_rejected', { httpStatus: status, providerCode: number(error.code), providerSubcode: number(error.error_subcode), category });
+  let summary = message;
+  for (const value of sensitiveValues.filter(Boolean).sort((a, b) => b.length - a.length)) {
+    for (const variant of new Set([value, encodeURIComponent(value)])) summary = summary.split(variant).join('[redacted]');
+  }
+  summary = summary.replace(/https?:\/\/[^\s<>"']+/gi, '[redacted-url]')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/[A-Za-z0-9_+/=%.\-]{24,}/g, '[redacted-value]').replace(/\s+/g, ' ').slice(0, 350);
+  return new ConnectionFailure(stage, 'provider_rejected', { httpStatus: status, providerCode: number(error.code), providerSubcode: number(error.error_subcode), category,
+    ...(summary ? { providerSummary: summary } : {}) });
 }

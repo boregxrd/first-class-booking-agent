@@ -3,6 +3,7 @@ import { z } from 'zod';
 const payloadSchema = z.object({
   accessToken: z.string().min(1), refreshToken: z.string().min(1).optional(), expiresAt: z.string().datetime().optional(),
   scopes: z.array(z.string()).optional(), subject: z.string().optional(), email: z.string().email().optional(),
+  checkpoint: z.object({ provider: z.literal('instagram'), distribuidoraId: z.string().min(1), kind: z.enum(['short', 'long']), resumeUntil: z.string().datetime() }).strict().optional(),
 }).strict();
 export type CredentialPayload = z.infer<typeof payloadSchema>;
 const encode = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
