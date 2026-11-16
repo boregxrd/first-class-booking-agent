@@ -60,3 +60,10 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - Repeating the profile creation with the same request ID returned the same profile/calendar without re-provisioning or requesting another invitation.
 - Google sharing notification was requested (`sendNotifications=true`); actual email receipt/acceptance still needs recipient confirmation.
 - All **96 local tests** pass; deployed version `c7a2d100-2be9-4088-9b9f-52fe04b70e3f`. Instagram client authorization, a second connected social account and full two-account booking acceptance remain pending. Multi-account routing remains disabled during this setup.
+
+## Complete automated pipeline coverage — 2026-11-16
+
+- Suite now contains **97 passing tests**, including `multi-account-pipeline.test.ts`.
+- The new test signs webhook payloads for two distribuidora accounts and the general DWC account, runs `processMetaWebhook` → durable inbox → production `handleQueue`/`createServices`/agent → Google Calendar client → outbox/Meta sender, and checks all three confirmed bookings' calendar and attribution fields.
+- It verifies that no booking exists before approval, each calendar contains only its assigned prospect, profile lookups and replies use the receiving account's credentials, and confirmation replies return to the correct account/customer. Deliberately incorrect legacy credentials make accidental single-account fallback fail the test.
+- D1 and application handlers are real; queue delivery and Google/Meta/OpenAI transports are simulated. This does not replace the pending real Instagram authorization/DM acceptance test, and does not enable multi-account routing in production.

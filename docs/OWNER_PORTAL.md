@@ -63,6 +63,16 @@ Create a profile (its calendar is provisioned automatically after Google authori
 
 If an imported legacy token has no recorded expiry, reconnect it through this flow before multi-account activation so renewal can use the provider's actual expiry rather than an invented date.
 
+### Owner and distribuidora journey
+
+1. The gym owner authorizes the gym Google account once and creates a distribuidora profile.
+2. The app creates/shares its calendar. The distribuidora opens the invitation using her own Google account; she does **not** grant our app management access to her personal Google calendars or need owner portal access.
+3. The owner selects **Connect Instagram / create invitation** on that specific profile and sends the expiring authorization link to its account holder.
+4. The holder signs into her eligible professional Instagram account and grants messaging access. The server discovers the actual account ID, subscribes its messaging webhook and saves the encrypted credentials/mapping to the existing profile/calendar.
+5. After real-account acceptance and activation, a DM to that Instagram account uses the same gym bot/context as DWC, replies from that account and attributes bookings to its distribuidora calendar. Scheduled reminders remain on the gym WhatsApp account.
+
+The Meta OAuth application ID/secret and callback must be configured before step 3 can work. Calendar provisioning alone does not connect Instagram, and the account registry is not used for new trainer traffic while `MULTI_ACCOUNT_ENABLED=false`.
+
 ## 6. WhatsApp, TikTok and reminder templates
 
 - **WhatsApp:** the portal connects an **existing provisioned Cloud API phone-number ID** and an access token. It verifies number metadata with Meta and stores the token encrypted. Owning the WhatsApp Business mobile app alone is not sufficient. New-number Business Platform signup, ownership verification, app/WABA webhook subscription, eligibility and template approval must be completed in Meta first; this is not a fabricated Embedded Signup flow. Gym activation/delivery remains task #6.
