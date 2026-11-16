@@ -81,6 +81,14 @@ If an imported legacy token has no recorded expiry, reconnect it through this fl
 
 The Meta OAuth application ID/secret and callback, Gmail API, and gym Gmail send consent must be configured before step 3 can work. Calendar provisioning alone does not connect Instagram, and the account registry is not used for new trainer traffic while `MULTI_ACCOUNT_ENABLED=false`.
 
+### Diagnosing an Instagram callback failure
+
+Authorization state is consumed **before** exchanging the one-use code; `used_at` does not mean the account connected successfully. Refreshing a failed callback cannot retry that code. Failures after valid state now show a diagnostic reference and stage-specific guidance. The owner can inspect `operational_alerts` with kind `instagram_connection_failed` and `resource_id` equal to that reference.
+
+Stored details include only stage (short token, long token, identity, messaging subscription, account save), fixed failure category, HTTP status, numeric Meta error/subcode, profile ID and a verified business account ID if already obtained. Provider messages, token values, callback codes and credential-bearing URLs are never retained in those diagnostics. Invalid/replayed state does not create diagnostic records.
+
+An account already assigned to DWC cannot be connected to another distribuidora implicitly; the existing account mapping and credentials are retained. Use a different professional account for a new trainer or arrange an explicit reassignment. Token responses may be flat or wrapped in a single-entry `data` array; multi-entry/invalid responses fail rather than selecting an arbitrary account.
+
 ## 6. WhatsApp, TikTok and reminder templates
 
 - **WhatsApp:** the portal connects an **existing provisioned Cloud API phone-number ID** and an access token. It verifies number metadata with Meta and stores the token encrypted. Owning the WhatsApp Business mobile app alone is not sufficient. New-number Business Platform signup, ownership verification, app/WABA webhook subscription, eligibility and template approval must be completed in Meta first; this is not a fabricated Embedded Signup flow. Gym activation/delivery remains task #6.

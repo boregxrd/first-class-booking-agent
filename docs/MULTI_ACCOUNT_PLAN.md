@@ -84,3 +84,10 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - Authenticated setup overview reports both Instagram OAuth configuration and Gmail send authorization ready to test.
 - Gmail accepted invitation `643f6d66-6ad7-4c25-a697-c21c96e99b2e` for the existing dinosaurio profile; the private recipient link expires at `2026-11-17T23:07:38.978Z`. No duplicate email request was issued.
 - Mailbox receipt, actual recipient Instagram approval/callback and a working account messaging subscription remain unverified. The live email acceptance checklist is not complete until the recipient confirms receipt. Multi-account routing remains disabled pending real account validation.
+
+### Instagram callback diagnosis — 2026-11-16
+
+- The recipient reached the Instagram callback after opening an emailed invitation. The second state was consumed at `23:16:26 UTC`, about seven seconds after starting and before its `23:31:19 UTC` expiry: that attempt was not blocked by expiration.
+- The previous handler swallowed the provider/save exception, so its exact cause cannot be reconstructed from the old records. New version `50c25a3e-5677-42dd-94fc-32c0fc8bdfc8` records sanitized failure stages and emits diagnostic references instead of labeling every failure as expired.
+- Added flat/single-entry-wrapped Instagram token handling and regression coverage for credential-error redaction and refusing to move an already-assigned account. All **104 tests** pass.
+- One fresh diagnostic invitation was accepted by Gmail; actual connection remains pending a new recipient attempt. No expired/used code is replayed and no DWC account assignment is changed speculatively.
