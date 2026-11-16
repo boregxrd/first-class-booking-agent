@@ -77,3 +77,10 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - Local suite: **101 passing tests**, including accepted/replayed sends, ambiguous outcomes with no automatic resend, explicit rejection/retry, expiry, escaped recipient pages, scanner-safe GET and one-use POST.
 - Real email delivery and recipient account authorization remain pending; Google acceptance must not be described as confirmed mailbox delivery.
 - Migration 0008 applied and email-capable Worker `de7b6cdd-7527-41a7-a552-7a1d6d9ac8a3` deployed. Authenticated overview confirms no invitation email has been sent yet: Instagram OAuth is not configured and the gym's existing Google consent does not include Gmail send permission. The portal disables emailing and explains both prerequisites rather than silently generating a copy/paste link.
+
+### First real Gmail invitation accepted — 2026-11-16
+
+- Owner enabled Gmail API and granted send-only Gmail consent. The confirmed Instagram app ID and matching secret are now installed in Worker secrets; the secret was transferred from the owner's clipboard through stdin without being printed or stored in Git.
+- Authenticated setup overview reports both Instagram OAuth configuration and Gmail send authorization ready to test.
+- Gmail accepted invitation `643f6d66-6ad7-4c25-a697-c21c96e99b2e` for the existing dinosaurio profile; the private recipient link expires at `2026-11-17T23:07:38.978Z`. No duplicate email request was issued.
+- Mailbox receipt, actual recipient Instagram approval/callback and a working account messaging subscription remain unverified. The live email acceptance checklist is not complete until the recipient confirms receipt. Multi-account routing remains disabled pending real account validation.
