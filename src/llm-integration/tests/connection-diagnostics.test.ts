@@ -8,6 +8,7 @@ import { createAccountRoutes } from '../../accounts/routes.js';
 import { vaultFor } from '../../accounts/runtime.js';
 import type { Env } from '../../types/env.js';
 import { localD1 } from './fixtures.js';
+import { alert } from '../runtime/persistence.js';
 
 async function fixture() {
   const { db, dispose } = await localD1();
@@ -53,11 +54,96 @@ test('callback failures expose a useful reference and persist only sanitized pro
     assert.equal(detail.stage, 'short_token'); assert.equal(detail.kind, 'provider_rejected');
     assert.equal(detail.httpStatus, 400); assert.equal(detail.providerCode, 100); assert.equal(detail.providerSubcode, 33);
     assert.equal(detail.category, 'client_credentials');
-    assert.doesNotMatch(row.detail, /private-app-secret|private-code|Invalid client_secret/);
+    assert.doesNotMatch(row.detail, /private-app-secret|private-code/);
+    assert.match(detail.providerSummary, /\[redacted\]/);
     const replay = await app.request(`/connections/callback/instagram?${new URLSearchParams({ state: f.state, code: 'private-code' })}`, {}, f.env);
     assert.match(await replay.text(), /expired or was already used/);
     assert.equal((await f.db.prepare("SELECT count(*) AS n FROM operational_alerts WHERE kind='instagram_connection_failed'").first<{ n: number }>())?.n, 1);
   } finally { globalThis.fetch = original; await f.dispose(); }
+});
+
+test('failed long-token exchange retains an encrypted checkpoint and owner retry does not replay the OAuth code', async () => {
+  const f = await fixture(), original = globalThis.fetch;
+  try {
+    f.env.ADMIN_API_TOKEN = 'x'.repeat(40);
+    let shortCalls = 0, longCalls = 0;
+    globalThis.fetch = async (input) => {
+      if (String(input).includes('api.instagram.com/oauth')) { shortCalls++; return Response.json({ access_token: 'private-short-token', expires_in: 3600 }); }
+      longCalls++;
+      return Response.json({ error: { code: 100, message: 'Invalid access_token private-short-token https://example.com/?client_secret=private-app-secret private-code user@example.com AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' } }, { status: 400 });
+    };
+    const app = new Hono<{ Bindings: Env }>().route('/', createAccountRoutes());
+    assert.equal((await app.request(`/connections/callback/instagram?${new URLSearchParams({ state: f.state, code: 'private-code' })}`, {}, f.env)).status, 400);
+    const row = await f.db.prepare("SELECT resource_id,detail FROM operational_alerts WHERE kind='instagram_connection_failed'").first<{ resource_id: string; detail: string }>();
+    assert.ok(row);
+    const detail = JSON.parse(row.detail);
+    assert.equal(detail.stage, 'long_token'); assert.equal(detail.shortTokenExpiresIn, 3600);
+    assert.doesNotMatch(row.detail, /private-short-token|private-app-secret|private-code|user@example.com|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/);
+    const checkpoint = await vaultFor(f.env).get(detail.checkpointId);
+    assert.equal(checkpoint?.accessToken, 'private-short-token');
+    assert.equal(checkpoint?.checkpoint?.kind, 'short');
+    assert.equal(checkpoint?.checkpoint?.distribuidoraId, f.profile.id);
+    assert.ok(Date.parse(checkpoint!.checkpoint!.resumeUntil) < Date.now() + 660_000);
+    assert.equal((await new AccountStore(f.db).publicAccounts()).length, 0);
+    assert.equal((await app.request('/admin/api/connections/retry-instagram', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: row.resource_id }) }, f.env)).status, 401);
+    globalThis.fetch = async (input, init) => {
+      assert.equal(String(input).includes('api.instagram.com/oauth'), false, 'must not replay the original authorization code');
+      if (String(input).includes('/access_token')) longCalls++;
+      return provider(input, init);
+    };
+    const retry = await app.request('/admin/api/connections/retry-instagram', { method: 'POST', headers: { Authorization: `Bearer ${f.env.ADMIN_API_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: row.resource_id }) }, f.env);
+    assert.equal(retry.status, 200, await retry.text());
+    assert.equal(shortCalls, 1); assert.equal(longCalls, 2);
+    assert.equal((await new AccountStore(f.db).publicAccounts())[0]?.distribuidora_id, f.profile.id);
+    assert.equal(await vaultFor(f.env).get(detail.checkpointId), null);
+    const active = await vaultFor(f.env).get('social:instagram:12345');
+    assert.equal(active?.checkpoint, undefined);
+    assert.ok(Date.parse(active!.expiresAt!) > Date.now() + 3_500_000, 'the account keeps its real provider expiry, not the checkpoint retention deadline');
+    assert.equal((await f.db.prepare('SELECT state FROM operational_alerts WHERE resource_id=?').bind(row.resource_id).first<{ state: string }>())?.state, 'resolved');
+  } finally { globalThis.fetch = original; await f.dispose(); }
+});
+
+test('an expired checkpoint cannot resume the connection', async () => {
+  const f = await fixture();
+  try {
+    let failure: ConnectionFailure | undefined;
+    await assert.rejects(completeConnection(f.env, 'instagram', f.state, 'code', async (input) => String(input).includes('api.instagram.com/oauth')
+      ? Response.json({ access_token: 'short-token' }) : Response.json({ error: { code: 100, message: 'Invalid token' } }, { status: 400 })), (error) => {
+      assert.ok(error instanceof ConnectionFailure); failure = error; return true;
+    });
+    const reference = crypto.randomUUID(), checkpointId = failure!.checkpointId!;
+    const value = (await vaultFor(f.env).get(checkpointId))!;
+    await vaultFor(f.env).put(checkpointId, { ...value, checkpoint: { ...value.checkpoint!, resumeUntil: '2000-01-01T00:00:00.000Z' } });
+    await f.db.prepare(`INSERT INTO operational_alerts (id,kind,resource_id,detail,created_at,updated_at) VALUES (?,'instagram_connection_failed',?,?,?,?)`)
+      .bind(reference, reference, JSON.stringify({ distribuidoraId: f.profile.id, checkpointId }), 'now', 'now').run();
+    const { retryInstagramConnection } = await import('../../accounts/connections.js');
+    await assert.rejects(retryInstagramConnection(f.env, reference, async () => { throw new Error('must not call provider'); }), /checkpoint expired/);
+  } finally { await f.dispose(); }
+});
+
+test('retry after an identity failure uses its long-token checkpoint without exchanging the short token again', async () => {
+  const f = await fixture();
+  try {
+    let failure: ConnectionFailure | undefined;
+    await assert.rejects(completeConnection(f.env, 'instagram', f.state, 'code', async (input, init) => String(input).includes('/me?')
+      ? Response.json({ error: { code: 2, message: 'Temporary provider failure' } }, { status: 503 }) : provider(input, init)), (error) => {
+      assert.ok(error instanceof ConnectionFailure); failure = error; return true;
+    });
+    const checkpointId = failure!.checkpointId!, stored = (await vaultFor(f.env).get(checkpointId))!;
+    assert.equal(stored.checkpoint?.kind, 'long');
+    const reference = crypto.randomUUID();
+    await alert(f.db, 'instagram_connection_failed', reference, JSON.stringify({ distribuidoraId: f.profile.id, checkpointId }));
+    const { retryInstagramConnection } = await import('../../accounts/connections.js');
+    const result = await retryInstagramConnection(f.env, reference, async (input, init) => {
+      assert.equal(String(input).includes('/access_token'), false);
+      assert.equal(String(input).includes('api.instagram.com/oauth'), false);
+      return provider(input, init);
+    });
+    assert.equal(result.accountId, 'instagram:12345');
+    assert.equal(await vaultFor(f.env).get(checkpointId), null);
+  } finally { await f.dispose(); }
 });
 
 test('an account already assigned to DWC yields an assignment error without moving it or replacing its credential', async () => {
