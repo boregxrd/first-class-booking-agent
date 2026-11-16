@@ -28,7 +28,7 @@
 
 ## Acceptance checklist
 
-- [ ] Creating a distribuidora creates her gym-owned calendar, grants bot writer access and her reader access, and requests sharing email notification.
+- [x] Creating a distribuidora creates her gym-owned calendar, grants bot writer access and her reader access, and requests sharing email notification.
 - [ ] Failed setup resumes without blindly creating duplicate calendars.
 - [ ] Accounts connect, reconnect and disconnect through owner-authorized flows; tokens never appear in responses/logs.
 - [ ] Two trainers receive bookings for the same class time in separate calendars.
@@ -51,3 +51,12 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - Migration 0007 applied remotely; authenticated bootstrap imported the existing DWC calendar/Instagram connection without recreating a calendar. Public health returns 200, protected API returns 401 without authorization, and authenticated overview returns only public account metadata.
 - Owner/vault secrets installed without printing values; their ignored local backup has mode 0600. Instructions and provider callback URLs are in `OWNER_PORTAL.md`.
 - **Still pending for #14/#8:** configure OAuth application clients, gym Google consent, real calendar creation/reader sharing/invitation, second real social account, and two-account live acceptance. WhatsApp template approval/delivery is #6, TikTok messaging is Félix's #10. The checklist above remains unchecked until the corresponding real-provider checks are completed.
+
+## Live calendar verification — 2026-11-16
+
+- Gym Google OAuth consent completed after adding the gym account as an approved test user.
+- Created the owner-requested `dinosaurio` profile through the protected API; calendar `DWC — dinosaurio` reached `ready` automatically.
+- Read back Google Calendar metadata and ACLs: `dataOwner` is the gym Google user, the bot service account is `writer`, the requested recipient is `reader`, and the calendar is not publicly shared. The existing general calendar's data owner was independently verified as the same gym user.
+- Repeating the profile creation with the same request ID returned the same profile/calendar without re-provisioning or requesting another invitation.
+- Google sharing notification was requested (`sendNotifications=true`); actual email receipt/acceptance still needs recipient confirmation.
+- All **96 local tests** pass; deployed version `c7a2d100-2be9-4088-9b9f-52fe04b70e3f`. Instagram client authorization, a second connected social account and full two-account booking acceptance remain pending. Multi-account routing remains disabled during this setup.
