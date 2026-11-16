@@ -81,3 +81,9 @@ These SQL files are applied in numeric order to the Cloudflare D1 database confi
 - Creates `social_accounts`, separately encrypted `account_credentials`, non-secret `gym_settings`, and expiring single-use `connection_states`.
 - Adds immutable-at-booking attribution fields to `bookings` and backfills existing bookings to `dwc`. Calendar IDs already stored on bookings remain unchanged.
 - Apply before deploying the new booking writes, even while `MULTI_ACCOUNT_ENABLED=false`. The owner-triggered bootstrap attaches the configured general calendar and imports credentials; migration SQL never contains live tokens or encryption keys. See `OWNER_PORTAL.md` for activation and recovery.
+
+## `0008_connection_invitation_emails.sql` — Gmail onboarding invitations
+
+- Adds retry-safe invitation email records with recipient/profile binding, hashed private link token, encrypted secret reference, 24-hour expiry, Gmail acceptance/rejection/unknown state, provider message ID and one-use connection-start timestamp.
+- Read-only email previews do not consume links; the recipient's explicit POST starts a fresh 15-minute OAuth state. The invitation is not an owner portal credential.
+- Apply before the updated owner overview, invitation routes and connection-maintenance job, including when multi-account routing is off. No email is sent by the migration.

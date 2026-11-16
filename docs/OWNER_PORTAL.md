@@ -4,7 +4,7 @@
 
 `/admin` is a management shell. Every `/admin/api/*` request requires verified owner authorization. It supports profile creation, automatic calendar provisioning, setup retry, active/inactive status, expiring Instagram invitations, existing WhatsApp Cloud API number connection, local account disconnection, and explicit gym reminder-sender selection. No credentials appear in list APIs. Public OAuth callbacks validate expiring one-use state; Google uses PKCE and validates the configured gym email.
 
-The current production single-account integration stays unchanged until `MULTI_ACCOUNT_ENABLED=true`. Apply migration `0007_distribuidoras.sql` **before deploying this code**, even when multi-account mode is off: booking writes use its new columns. Existing bookings are assigned to the seeded normal `dwc` profile. Existing calendars are never recreated by the import.
+The current production single-account integration stays unchanged until `MULTI_ACCOUNT_ENABLED=true`. Apply migrations through `0008_connection_invitation_emails.sql` **before deploying this code**, even when multi-account mode is off: booking writes and owner/maintenance queries use the new schema. Existing bookings are assigned to the seeded normal `dwc` profile. Existing calendars are never recreated by the import.
 
 ## 1. Protect owner access
 
@@ -41,7 +41,7 @@ You can install the client without copying its secret into chat or shell argumen
 
 After consent, `node scripts/owner.mjs --create-profile "Name" email@example.com` runs the same calendar creation flow as the portal. It prints a public request ID before sending: pass that ID as the final argument when retrying a lost response, rather than creating a second profile. `--provision <profile-id>` resumes setup, and `--inspect-calendar <profile-id>` reads actual Google `dataOwner`, sharing roles and public-sharing status through the protected API without exposing OAuth credentials.
 
-From `/admin`, choose **Authorize gym Google account**, open the returned link and consent as that exact gym user. The request needs OpenID/email, `calendar.calendars`, `calendar.calendarlist.readonly` (ambiguous-create recovery), `calendar.acls`, and `calendar.events`. No distribuidora authorizes personal Google calendar access.
+From `/admin`, choose **Authorize gym Google: calendars and invitation emails**, open the returned link and consent as that exact gym user. The request needs OpenID/email, `calendar.calendars`, `calendar.calendarlist.readonly` (ambiguous-create recovery), `calendar.acls`, `calendar.events`, and **`gmail.send`** for account-connection invitation emails. No inbox-reading scope is requested. Existing calendar-only consent remains usable for calendars, but the gym must reauthorize with Gmail send permission before emailing connection invitations. No distribuidora authorizes personal Google/Gmail access to this app.
 
 Keep `GOOGLE_CLIENT_EMAIL`/secret `GOOGLE_PRIVATE_KEY` for the existing bot service account. New calendars are created using the **gym user's** token, then shared with the service account as writer and the distribuidora as reader. Google sends the reader sharing notification. The gym account remains the data owner. If the profile email is the gym owner itself, owner access is retained rather than downgraded. Profile emails cannot equal the bot service account.
 
@@ -61,7 +61,13 @@ Set `INSTAGRAM_OAUTH_CLIENT_ID` and secret `INSTAGRAM_OAUTH_CLIENT_SECRET` for t
 
 Keep the verified Meta callback `/webhook`, matching `META_APP_SECRET`, configured once for the application. Each account holder needs an eligible professional account, required messaging access/app review, and must authorize `instagram_business_basic` and `instagram_business_manage_messages`.
 
-Create a profile (its calendar is provisioned automatically after Google authorization), then generate its **Connect Instagram** link. The holder has 15 minutes to authorize. The callback exchanges the token, obtains the actual `user_id`/username, subscribes that account's `messages` webhook, and only then saves it connected. Accounts already assigned elsewhere require explicit owner resolution rather than silent transfer. Long-lived Instagram tokens renew when within seven days of expiry; revoked accounts become `needs_authorization` without disconnecting other accounts. Reconnect through a fresh invitation.
+Create a profile (its calendar is provisioned automatically after Google authorization), then choose **Email Instagram connection invitation**. The gym sends a separate email from its Gmail account to the profile's stored email address. This is different from Google's calendar-sharing invitation. Enable the **Gmail API in the OAuth client's Cloud project** and reauthorize gym Google with `gmail.send`; no new Google client or email vendor is needed. Meta OAuth configuration must also be complete before emails can be sent.
+
+The emailed link is valid for **24 hours**. Opening it shows a recipient page without consuming the invitation, so email security previews do not invalidate it. The recipient deliberately presses **Conectar Instagram** to consume the invitation and start a fresh **15-minute** Instagram authorization. The callback exchanges the token, obtains the actual `user_id`/username, subscribes that account's `messages` webhook, and only then saves it connected. Accounts already assigned elsewhere require explicit owner resolution rather than silent transfer. Long-lived Instagram tokens renew when within seven days of expiry; revoked accounts become `needs_authorization` without disconnecting other accounts. Reconnect through a fresh emailed invitation.
+
+Each email request has an idempotency key. Gmail acceptance is recorded separately from actual receipt; ambiguous network outcomes remain `unknown` and never blindly resend. The portal displays acceptance, rejection, uncertainty and whether connection has started. Check with the recipient before deliberately sending another email after an unknown outcome. The private invitation token is stored encrypted, and only its hash is used for public-link lookup; owner listing APIs never return that token. Expired invitation records/secrets are cleaned after 90 days, and expired in-flight sends become unknown.
+
+Operators can use `node scripts/owner.mjs --email-instagram <profile-id> [request-id]` to run this same email flow. Reuse the printed request ID when retrying a lost response. A Gmail rejection is different from an ambiguous send; no invitation should be reported as delivered based only on Gmail acceptance.
 
 If an imported legacy token has no recorded expiry, reconnect it through this flow before multi-account activation so renewal can use the provider's actual expiry rather than an invented date.
 
@@ -69,11 +75,11 @@ If an imported legacy token has no recorded expiry, reconnect it through this fl
 
 1. The gym owner authorizes the gym Google account once and creates a distribuidora profile.
 2. The app creates/shares its calendar. The distribuidora opens the invitation using her own Google account; she does **not** grant our app management access to her personal Google calendars or need owner portal access.
-3. The owner selects **Connect Instagram / create invitation** on that specific profile and sends the expiring authorization link to its account holder.
+3. The owner selects **Email Instagram connection invitation** on that profile; the gym emails its registered address. The account holder opens the 24-hour invitation and presses **Conectar Instagram**.
 4. The holder signs into her eligible professional Instagram account and grants messaging access. The server discovers the actual account ID, subscribes its messaging webhook and saves the encrypted credentials/mapping to the existing profile/calendar.
 5. After real-account acceptance and activation, a DM to that Instagram account uses the same gym bot/context as DWC, replies from that account and attributes bookings to its distribuidora calendar. Scheduled reminders remain on the gym WhatsApp account.
 
-The Meta OAuth application ID/secret and callback must be configured before step 3 can work. Calendar provisioning alone does not connect Instagram, and the account registry is not used for new trainer traffic while `MULTI_ACCOUNT_ENABLED=false`.
+The Meta OAuth application ID/secret and callback, Gmail API, and gym Gmail send consent must be configured before step 3 can work. Calendar provisioning alone does not connect Instagram, and the account registry is not used for new trainer traffic while `MULTI_ACCOUNT_ENABLED=false`.
 
 ## 6. WhatsApp, TikTok and reminder templates
 

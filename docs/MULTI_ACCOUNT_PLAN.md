@@ -31,6 +31,7 @@
 - [x] Creating a distribuidora creates her gym-owned calendar, grants bot writer access and her reader access, and requests sharing email notification.
 - [ ] Failed setup resumes without blindly creating duplicate calendars.
 - [ ] Accounts connect, reconnect and disconnect through owner-authorized flows; tokens never appear in responses/logs.
+- [ ] A separate Instagram invitation email is accepted by gym Gmail and received by the distribuidora; its private 24-hour link starts one-use authorization without owner portal access.
 - [ ] Two trainers receive bookings for the same class time in separate calendars.
 - [ ] Main-account bookings stay in the general calendar.
 - [ ] Replies use the correct originating account.
@@ -67,3 +68,12 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - The new test signs webhook payloads for two distribuidora accounts and the general DWC account, runs `processMetaWebhook` → durable inbox → production `handleQueue`/`createServices`/agent → Google Calendar client → outbox/Meta sender, and checks all three confirmed bookings' calendar and attribution fields.
 - It verifies that no booking exists before approval, each calendar contains only its assigned prospect, profile lookups and replies use the receiving account's credentials, and confirmation replies return to the correct account/customer. Deliberately incorrect legacy credentials make accidental single-account fallback fail the test.
 - D1 and application handlers are real; queue delivery and Google/Meta/OpenAI transports are simulated. This does not replace the pending real Instagram authorization/DM acceptance test, and does not enable multi-account routing in production.
+
+## Emailed Instagram invitations
+
+- Owner-requested refinement: the Instagram connection invitation is a separate **email from gym Gmail**, rather than a URL the owner must manually forward. The Google calendar-sharing invitation remains separate.
+- Recipient links last 24 hours; a deliberate button starts a one-use 15-minute Instagram authorization. GET previews are safe. The email never grants owner portal access.
+- Gmail needs only send permission, not inbox-reading access. Existing calendar consent must be expanded explicitly, Gmail API enabled, and Meta OAuth configured before a real invitation can be emailed.
+- Local suite: **101 passing tests**, including accepted/replayed sends, ambiguous outcomes with no automatic resend, explicit rejection/retry, expiry, escaped recipient pages, scanner-safe GET and one-use POST.
+- Real email delivery and recipient account authorization remain pending; Google acceptance must not be described as confirmed mailbox delivery.
+- Migration 0008 applied and email-capable Worker `de7b6cdd-7527-41a7-a552-7a1d6d9ac8a3` deployed. Authenticated overview confirms no invitation email has been sent yet: Instagram OAuth is not configured and the gym's existing Google consent does not include Gmail send permission. The portal disables emailing and explains both prerequisites rather than silently generating a copy/paste link.
