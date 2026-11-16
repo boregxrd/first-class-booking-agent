@@ -5,13 +5,23 @@ import type { Env } from '../types/env.js';
 import { ownerAuthorized } from './auth.js';
 import { AccountStore } from './store.js';
 import { bootstrapLegacyAccounts, vaultFor } from './runtime.js';
-import { completeConnection, connectWhatsApp, startConnection } from './connections.js';
+import { completeConnection, connectWhatsApp, startConnection, retryInstagramConnection, ConnectionRetryError } from './connections.js';
 import { GoogleOwnerCalendars, ownerGoogleToken } from './google-owner.js';
 import { provisionCalendar } from './provisioning.js';
 import { portalHtml, portalScript } from './portal.js';
 import { emailInstagramInvitation, inspectInvitation, openInstagramInvitation, invitationEmailAuthorized, InvitationSetupError } from './invitation-email.js';
 import { ConnectionFailure } from './connection-errors.js';
 import { alert } from '../llm-integration/runtime/persistence.js';
+
+async function recordConnectionFailure(env: Env, error: ConnectionFailure) {
+  if (!error.validatedState || !env.DB) return '';
+  const reference = crypto.randomUUID();
+  try {
+    await alert(env.DB, 'instagram_connection_failed', reference, JSON.stringify({ stage: error.stage, kind: error.kind,
+      distribuidoraId: error.distribuidoraId, providerAccountId: error.providerAccountId, checkpointId: error.checkpointId, ...error.details }));
+  } catch { console.warn('[Instagram connection diagnostic unavailable]', { reference, stage: error.stage, kind: error.kind }); }
+  return reference;
+}
 
 export function createAccountRoutes() {
   const routes = new Hono<{ Bindings: Env }>();
@@ -90,6 +100,18 @@ export function createAccountRoutes() {
       throw error;
     }
   });
+  routes.post('/admin/api/connections/retry-instagram', async (c) => {
+    const { reference } = z.object({ reference: z.string().uuid() }).strict().parse(await c.req.json());
+    try { return c.json(await retryInstagramConnection(c.env, reference)); }
+    catch (error) {
+      if (error instanceof ConnectionRetryError) return c.json({ error: error.message }, 409);
+      if (error instanceof ConnectionFailure) {
+        const nextReference = await recordConnectionFailure(c.env, error);
+        return c.json({ error: `${error.publicMessage()} Reference: ${nextReference}`, reference: nextReference }, 400);
+      }
+      throw error;
+    }
+  });
   routes.post('/admin/api/profiles/:id/whatsapp', async (c) => {
     const id = await connectWhatsApp(c.env, c.req.param('id'), await c.req.json()); return c.json({ accountId: id });
   });
@@ -124,14 +146,7 @@ export function createAccountRoutes() {
       return c.text('Authorization saved. You can close this window. The owner can refresh the DWC portal.');
     } catch (error) {
       if (error instanceof ConnectionFailure) {
-        let reference = '';
-        if (error.validatedState && c.env.DB) {
-          reference = crypto.randomUUID();
-          try {
-            await alert(c.env.DB, 'instagram_connection_failed', reference, JSON.stringify({ stage: error.stage, kind: error.kind,
-              distribuidoraId: error.distribuidoraId, providerAccountId: error.providerAccountId, ...error.details }));
-          } catch { console.warn('[Instagram connection diagnostic unavailable]', { reference, stage: error.stage, kind: error.kind }); }
-        }
+        const reference = await recordConnectionFailure(c.env, error);
         return c.text(`${error.publicMessage()}${reference ? ` Reference: ${reference}` : ''}`, 400);
       }
       return c.text('Authorization could not complete. Ask the owner to check provider configuration and generate a fresh link.', 400);

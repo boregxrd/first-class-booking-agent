@@ -5,6 +5,8 @@ import { withLease, alert, resolveAlert } from '../llm-integration/runtime/persi
 /** Bounded renewal of supported Instagram tokens. Other providers supply their own refresh adapter. */
 export async function maintainConnections(env: Env, now: string, request: typeof fetch = fetch) {
   if (!env.DB || !env.ACCOUNT_CREDENTIAL_KEYS || !env.ACCOUNT_CREDENTIAL_ACTIVE_KEY) return;
+  await env.DB.prepare("DELETE FROM account_credentials WHERE id IN (SELECT id FROM account_credentials WHERE id LIKE 'instagram-pending:%' AND updated_at<? LIMIT 100)")
+    .bind(new Date(Date.parse(now) - 900_000).toISOString()).run();
   await env.DB.prepare("UPDATE connection_invitation_emails SET state='unknown',updated_at=? WHERE state='sending' AND updated_at<?")
     .bind(now, new Date(Date.parse(now) - 600_000).toISOString()).run();
   const oldEmails = await env.DB.prepare('SELECT id,secret_id FROM connection_invitation_emails WHERE expires_at<? LIMIT 100')

@@ -67,12 +67,16 @@ if (process.argv.includes('--setup')) {
     console.error(`Invitation email request ID (reuse on retry): ${requestId}`);
     routes[command] = [`/profiles/${encodeURIComponent(process.argv[3])}/instagram-invitation`, {}];
   }
+  if (command === '--retry-instagram') {
+    if (!process.argv[3]) throw new Error('Usage: --retry-instagram <diagnostic-reference>');
+    routes[command] = ['/connections/retry-instagram', { reference: process.argv[3] }];
+  }
   if (['--inspect-calendar', '--provision'].includes(command)) {
     if (!process.argv[3]) throw new Error(`Usage: ${command} <profile-id>`);
     routes[command] = command === '--inspect-calendar' ? [`/profiles/${encodeURIComponent(process.argv[3])}/calendar`]
       : [`/profiles/${encodeURIComponent(process.argv[3])}/provision`, {}];
   }
-  if (!routes[command]) throw new Error('Use --setup, --copy-token, --google-client <downloaded-json>, --status, --bootstrap, --google, --create-profile, --email-instagram, --inspect-calendar or --provision.');
+  if (!routes[command]) throw new Error('Use --setup, --copy-token, --google-client <downloaded-json>, --status, --bootstrap, --google, --create-profile, --email-instagram, --retry-instagram, --inspect-calendar or --provision.');
   const [route, body] = routes[command];
   const response = await fetch(new URL(`/admin/api${route}`, base), { method: body ? 'POST' : 'GET',
     headers: { Authorization: `Bearer ${local.adminToken}`, 'Content-Type': 'application/json', ...(requestId ? { 'Idempotency-Key': requestId } : {}) },
