@@ -16,9 +16,10 @@ export async function ownerGoogleToken(env: Env): Promise<string> {
     const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', signal: AbortSignal.timeout(15_000),
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: value.refreshToken, client_id: env.GOOGLE_OAUTH_CLIENT_ID, client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET }) });
     if (!response.ok) throw new OwnerGoogleError(response.status);
-    const data = await response.json() as { access_token?: string; expires_in?: number };
+    const data = await response.json() as { access_token?: string; expires_in?: number; scope?: string };
     if (!data.access_token || !data.expires_in) throw new Error('Invalid Google refresh response');
-    await vault.put('google-owner', { ...value, accessToken: data.access_token, expiresAt: new Date(Date.now() + data.expires_in * 1000).toISOString() }, lease.fence);
+    await vault.put('google-owner', { ...value, accessToken: data.access_token, expiresAt: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+      ...(data.scope ? { scopes: data.scope.split(' ') } : {}) }, lease.fence);
     return data.access_token;
   });
 }

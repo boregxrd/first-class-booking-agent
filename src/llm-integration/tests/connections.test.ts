@@ -26,6 +26,8 @@ test('Google OAuth binds expiring one-use state, PKCE and exact gym identity', a
       ACCOUNT_CREDENTIAL_KEYS: JSON.stringify({ v1: btoa('a'.repeat(32)) }), ACCOUNT_CREDENTIAL_ACTIVE_KEY: 'v1' };
     const start = await startConnection(env, 'google', null), url = new URL(start.authorizationUrl), state = url.searchParams.get('state')!;
     assert.ok(url.searchParams.get('code_challenge'));
+    assert.match(url.searchParams.get('scope')!, /gmail\.send/);
+    assert.doesNotMatch(url.searchParams.get('scope')!, /gmail\.(?:readonly|modify|metadata)|https:\/\/mail\.google\.com/);
     let calls = 0;
     const provider: typeof fetch = async (input, options) => {
       calls++;

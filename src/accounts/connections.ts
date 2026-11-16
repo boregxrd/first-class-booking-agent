@@ -33,10 +33,11 @@ export async function startConnection(env: Env, provider: 'google' | 'instagram'
   if (provider === 'instagram' && (!distribuidoraId || !(await new AccountStore(env.DB).get(distribuidoraId))?.active)) throw new Error('Active distribuidora required');
   const url = new URL(provider === 'google' ? 'https://accounts.google.com/o/oauth2/v2/auth' : 'https://www.instagram.com/oauth/authorize');
   url.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', state,
-    scope: provider === 'google' ? 'openid email https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.acls https://www.googleapis.com/auth/calendar.events'
+    scope: provider === 'google' ? 'openid email https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.acls https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send'
       : 'instagram_business_basic,instagram_business_manage_messages' }).toString();
   if (provider === 'google') {
     url.searchParams.set('access_type', 'offline'); url.searchParams.set('prompt', 'consent');
+    url.searchParams.set('include_granted_scopes', 'true');
     url.searchParams.set('login_hint', env.GOOGLE_OWNER_EMAIL!);
     url.searchParams.set('code_challenge', await stateHash(verifier)); url.searchParams.set('code_challenge_method', 'S256');
   } else { url.searchParams.set('enable_fb_login', '0'); url.searchParams.set('force_authentication', '1'); }
