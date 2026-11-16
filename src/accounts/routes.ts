@@ -10,6 +10,8 @@ import { GoogleOwnerCalendars, ownerGoogleToken } from './google-owner.js';
 import { provisionCalendar } from './provisioning.js';
 import { portalHtml, portalScript } from './portal.js';
 import { emailInstagramInvitation, inspectInvitation, openInstagramInvitation, invitationEmailAuthorized, InvitationSetupError } from './invitation-email.js';
+import { ConnectionFailure } from './connection-errors.js';
+import { alert } from '../llm-integration/runtime/persistence.js';
 
 export function createAccountRoutes() {
   const routes = new Hono<{ Bindings: Env }>();
@@ -120,7 +122,20 @@ export function createAccountRoutes() {
       if (c.req.query('error')) return c.text('Authorization was declined. Ask the owner for a new connection link.', 400);
       await completeConnection(c.env, provider, c.req.query('state') ?? '', c.req.query('code') ?? '');
       return c.text('Authorization saved. You can close this window. The owner can refresh the DWC portal.');
-    } catch { return c.text('Authorization could not complete or this link expired. Ask the owner for a new connection link.', 400); }
+    } catch (error) {
+      if (error instanceof ConnectionFailure) {
+        let reference = '';
+        if (error.validatedState && c.env.DB) {
+          reference = crypto.randomUUID();
+          try {
+            await alert(c.env.DB, 'instagram_connection_failed', reference, JSON.stringify({ stage: error.stage, kind: error.kind,
+              distribuidoraId: error.distribuidoraId, providerAccountId: error.providerAccountId, ...error.details }));
+          } catch { console.warn('[Instagram connection diagnostic unavailable]', { reference, stage: error.stage, kind: error.kind }); }
+        }
+        return c.text(`${error.publicMessage()}${reference ? ` Reference: ${reference}` : ''}`, 400);
+      }
+      return c.text('Authorization could not complete. Ask the owner to check provider configuration and generate a fresh link.', 400);
+    }
   });
   return routes;
 }
