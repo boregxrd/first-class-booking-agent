@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { html } from 'hono/html';
 import type { Env } from '../types/env.js';
 import { ownerAuthorized } from './auth.js';
 import { AccountStore } from './store.js';
@@ -8,6 +9,7 @@ import { completeConnection, connectWhatsApp, startConnection } from './connecti
 import { GoogleOwnerCalendars, ownerGoogleToken } from './google-owner.js';
 import { provisionCalendar } from './provisioning.js';
 import { portalHtml, portalScript } from './portal.js';
+import { emailInstagramInvitation, inspectInvitation, openInstagramInvitation, invitationEmailAuthorized, InvitationSetupError } from './invitation-email.js';
 
 export function createAccountRoutes() {
   const routes = new Hono<{ Bindings: Env }>();
@@ -32,8 +34,11 @@ export function createAccountRoutes() {
   routes.get('/admin/api/overview', async (c) => {
     const store = new AccountStore(c.env.DB!);
     return c.json({ profiles: await store.list(), accounts: await store.publicAccounts(), reminderSender: await store.setting('reminder_sender_account_id'),
+      invitations: (await c.env.DB!.prepare('SELECT id,distribuidora_id,recipient,state,expires_at,opened_at,created_at FROM connection_invitation_emails ORDER BY created_at DESC LIMIT 100').all()).results,
       generalProfileId: await store.setting('general_distribuidora_id') ?? 'dwc', multiAccountEnabled: c.env.MULTI_ACCOUNT_ENABLED === 'true',
-      setup: { googleOAuthConfigured: Boolean(c.env.GOOGLE_OAUTH_CLIENT_ID && c.env.GOOGLE_OAUTH_CLIENT_SECRET && c.env.GOOGLE_OWNER_EMAIL) } });
+      setup: { googleOAuthConfigured: Boolean(c.env.GOOGLE_OAUTH_CLIENT_ID && c.env.GOOGLE_OAUTH_CLIENT_SECRET && c.env.GOOGLE_OWNER_EMAIL),
+        instagramOAuthConfigured: Boolean(c.env.INSTAGRAM_OAUTH_CLIENT_ID && c.env.INSTAGRAM_OAUTH_CLIENT_SECRET),
+        invitationEmailAuthorized: await invitationEmailAuthorized(c.env) } });
   });
   routes.post('/admin/api/profiles', async (c) => {
     const profile = await new AccountStore(c.env.DB!).create(await c.req.json(), c.req.header('Idempotency-Key'));
@@ -72,6 +77,17 @@ export function createAccountRoutes() {
     }
     return c.json(await startConnection(c.env, input.provider, input.distribuidoraId ?? null));
   });
+  routes.post('/admin/api/profiles/:id/instagram-invitation', async (c) => {
+    const requestId = z.string().uuid().parse(c.req.header('Idempotency-Key'));
+    try {
+      const result = await emailInstagramInvitation(c.env, c.req.param('id'), requestId);
+      return c.json({ ...result, ...(result.state === 'rejected' ? { error: 'Gmail rejected the invitation email. Verify Gmail API is enabled and the gym Google account authorized email sending.' } : {}) },
+        result.state === 'accepted' ? 200 : result.state === 'rejected' ? 502 : 202);
+    } catch (error) {
+      if (error instanceof InvitationSetupError) return c.json({ error: error.message }, 503);
+      throw error;
+    }
+  });
   routes.post('/admin/api/profiles/:id/whatsapp', async (c) => {
     const id = await connectWhatsApp(c.env, c.req.param('id'), await c.req.json()); return c.json({ accountId: id });
   });
@@ -83,6 +99,20 @@ export function createAccountRoutes() {
       .bind(accountId, await store.setting('general_distribuidora_id') ?? 'dwc').first();
     if (!account) return c.json({ error: 'Select a connected WhatsApp account belonging to the gym record' }, 400);
     await store.setSetting('reminder_sender_account_id', accountId); return c.json({ ok: true });
+  });
+  routes.get('/connect/instagram/:token', async (c) => {
+    const invitation = await inspectInvitation(c.env, c.req.param('token'));
+    if (!invitation) return c.text('This invitation expired, was already used or is unavailable. Ask the gym for a new invitation email.', 410);
+    c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://www.instagram.com; frame-ancestors 'none'; base-uri 'none'");
+    return c.html(html`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conectar Instagram · DWC</title>
+      <body><h1>Dallas Wellness Club</h1><p>Hola ${invitation.name}. Conecta tu cuenta profesional de Instagram a tu perfil y calendario de reservas.</p>
+      <p>No necesitas iniciar sesión en el portal de propietarios. Al continuar, Instagram te pedirá autorizar acceso a los mensajes.</p>
+      <form method="post" action="/connect/instagram/${c.req.param('token')}"><button>Conectar Instagram</button></form></body></html>`);
+  });
+  routes.post('/connect/instagram/:token', async (c) => {
+    c.header('Content-Security-Policy', "default-src 'none'; form-action 'self' https://www.instagram.com; frame-ancestors 'none'; base-uri 'none'");
+    try { return c.redirect(await openInstagramInvitation(c.env, c.req.param('token')), 303); }
+    catch { return c.text('This invitation could not start Instagram authorization. It may be expired or already used. Ask the gym for help.', 410); }
   });
   routes.get('/connections/callback/:provider', async (c) => {
     try {
