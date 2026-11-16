@@ -48,6 +48,12 @@ export function createAccountRoutes() {
     await ownerGoogleToken(c.env);
     return c.json({ profile: await provisionCalendar(c.env.DB!, c.req.param('id'), c.env.GOOGLE_CLIENT_EMAIL ?? '', new GoogleOwnerCalendars(c.env)) });
   });
+  routes.get('/admin/api/profiles/:id/calendar', async (c) => {
+    const profile = await new AccountStore(c.env.DB!).get(c.req.param('id'));
+    if (!profile?.google_calendar_id) return c.json({ error: 'This profile has no provisioned calendar' }, 404);
+    return c.json({ profileId: profile.id, setupStatus: profile.calendar_setup_status, calendarViewUrl: profile.calendar_view_url,
+      calendar: await new GoogleOwnerCalendars(c.env).inspect(profile.google_calendar_id) });
+  });
   routes.post('/admin/api/profiles/:id/active', async (c) => {
     const { active } = z.object({ active: z.boolean() }).strict().parse(await c.req.json());
     await new AccountStore(c.env.DB!).setActive(c.req.param('id'), active); return c.json({ ok: true });

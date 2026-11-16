@@ -60,6 +60,15 @@ export class GoogleOwnerCalendars implements CalendarProvisioner {
     if (matches.length > 1) throw new Error('Multiple provisioned calendars require owner resolution');
     return matches[0]?.id ?? null;
   }
+  async inspect(calendarId: string) {
+    const calendar = await this.request(`calendars/${encodeURIComponent(calendarId)}`);
+    const acl = await this.list(`calendars/${encodeURIComponent(calendarId)}/acl`);
+    return {
+      id: calendar.id, summary: calendar.summary, timeZone: calendar.timeZone, dataOwner: calendar.dataOwner ?? null,
+      publiclyShared: acl.some((rule) => rule.scope?.type === 'default' && rule.role !== 'none'),
+      access: acl.filter((rule) => rule.scope?.type === 'user').map((rule) => ({ email: rule.scope.value, role: rule.role })),
+    };
+  }
   async share(calendarId: string, email: string, role: 'reader' | 'writer', notify: boolean) {
     if (email.toLowerCase() === this.env.GOOGLE_OWNER_EMAIL?.toLowerCase() && role === 'reader') return; // Never downgrade the data owner's access.
     const path = `calendars/${encodeURIComponent(calendarId)}/acl`;
