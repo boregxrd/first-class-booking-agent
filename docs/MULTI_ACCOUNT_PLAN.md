@@ -91,3 +91,10 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - The previous handler swallowed the provider/save exception, so its exact cause cannot be reconstructed from the old records. New version `50c25a3e-5677-42dd-94fc-32c0fc8bdfc8` records sanitized failure stages and emits diagnostic references instead of labeling every failure as expired.
 - Added flat/single-entry-wrapped Instagram token handling and regression coverage for credential-error redaction and refusing to move an already-assigned account. All **104 tests** pass.
 - One fresh diagnostic invitation was accepted by Gmail; actual connection remains pending a new recipient attempt. No expired/used code is replayed and no DWC account assignment is changed speculatively.
+
+### Long-token failure isolated — 2026-11-16
+
+- Reference `48cd9932-a2c1-4f54-a3e9-efdd0102eba1` proves the code exchange reached a valid short token, then Meta rejected the long-lived token request with HTTP 400 / code 100. The first diagnostic did not retain Meta's reason text or a retry credential, so the precise parameter rejection remains unconfirmed.
+- Deployed `a935704b-1cdf-40fb-a8fe-b1cc0318033e`: bounded credential-redacted summaries, optional encrypted profile-bound token checkpoints, owner-only retry without replaying OAuth codes, and checkpoint expiry/cleanup. No account is considered connected until identity/subscription/save succeeds.
+- All **107 tests** pass, including short/long checkpoint recovery, preservation of real token expiry, denial to unauthenticated/expired retries and secret redaction.
+- New invitation `db32a284-ad9f-4e95-a303-acfbd1ea07a2` was accepted by Gmail. Waiting for the recipient to authorize once under the checkpoint-capable deployment; no new callback was observed during a bounded check. Later retries can use the owner endpoint within the original 10-minute window when a checkpoint exists.
