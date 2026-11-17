@@ -7,7 +7,7 @@
 		"nodejs_compat"
 	],
 	"vars": {
-		"MULTI_ACCOUNT_ENABLED": "false",
+		"MULTI_ACCOUNT_ENABLED": "true",
 		"ADMIN_ORIGIN": "https://first-class-booking-agent.dallaswellnessclubweb.workers.dev",
 		"ACCOUNT_CREDENTIAL_ACTIVE_KEY": "v1",
 		"GOOGLE_OWNER_EMAIL": "dallaswellnessclubweb@gmail.com",
