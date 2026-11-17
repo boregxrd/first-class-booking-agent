@@ -1,4 +1,5 @@
 import type { ClassSchedule } from '../../../model.js';
+import { calendarInputReference, scheduledTimes, type CalendarInputIssue } from './calendar-facts.js';
 
 export interface BookingIntake {
   date: string | null;
@@ -6,6 +7,7 @@ export interface BookingIntake {
   phone: string | null;
   phoneUnavailable: boolean;
   updatedAt: string;
+  dateIssue?: CalendarInputIssue;
 }
 
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -64,8 +66,15 @@ export function updateBookingIntake(previous: BookingIntake | undefined, text: s
     ? { ...previous } : { date: null, time: null, phone: null, phoneUnavailable: false, updatedAt: now };
   if (intake.date && intake.date < today) { intake.date = null; intake.time = null; }
   const value = normalize(text.trim());
-  const date = selectedDate(value, today);
-  if (date !== undefined) intake.date = date;
+  const reference = calendarInputReference(value, today);
+  const dayAnswer = previous?.dateIssue && value.match(/^(?:el |the )?(\d{1,2})[.!\s]*$/);
+  const chosenCorrection = dayAnswer ? [previous.dateIssue?.date, previous.dateIssue?.expectedDate]
+    .find((candidate) => candidate && Number(candidate.slice(8, 10)) === Number(dayAnswer[1])) : undefined;
+  const date = chosenCorrection ?? (reference ? reference.date : selectedDate(value, today));
+  if (date !== undefined) {
+    intake.date = date;
+    intake.dateIssue = chosenCorrection ? undefined : reference?.issue;
+  }
   const phone = text.match(/\+[1-9][\d ()-]{6,22}\d\b/)?.[0].replace(/[ ()-]/g, '');
   if (phone && /^\+[1-9]\d{7,14}$/.test(phone)) { intake.phone = phone; intake.phoneUnavailable = false; }
   else if (/\b(?:no (?:tengo|dispongo de) (?:un |numero de |numero para )?(?:telefono|numero|celular|movil|whatsapp)|(?:i )?(?:do not|don't) have (?:a )?(?:phone|number|whatsapp))\b/.test(value)) {
@@ -110,8 +119,5 @@ export function selectedSlotInstant(intake: BookingIntake): string | null {
 }
 
 export function dateHasClasses(date: string, schedule: ClassSchedule): boolean {
-  const override = schedule.dateOverrides.find((item) => item.date === date);
-  if (override) return override.startTimes.length > 0;
-  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay() || 7;
-  return schedule.weekly.some((item) => item.weekday === weekday && item.startTimes.length > 0);
+  return scheduledTimes(date, schedule).length > 0;
 }
