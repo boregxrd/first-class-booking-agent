@@ -3,9 +3,9 @@
 ## Current status — 2026-11-17
 
 - The app is Published, but the owner-provided permission screen shows `instagram_business_basic` and `instagram_business_manage_messages` as **Ready for testing**, each with 0 API calls. That does not demonstrate approved public/advanced access.
-- The role screen showed the existing gym test account as Instagram Tester and another invitation pending. The new professional test account must be invited and accept its role before the controlled test.
+- The initial role screen showed the existing gym test account as Instagram Tester and another invitation pending. The new professional test account has now accepted its separate tester invitation and completed native OAuth.
 - The user agreed to prepare public-account approval in parallel with tester-based validation. **This document is a draft submission packet, not a submitted or approved request.**
-- Native Instagram OAuth still fails at long-token exchange and a short-token Graph profile read with HTTP 400 / Meta code 100, Unsupported request. Tester restrictions are a hypothesis to check, not a verified cause. Keep #14 and #8 in progress.
+- The professional test account's Instagram Tester invitation was initially unaccepted; granting both OAuth permissions alone still resulted in Unsupported request. After tester acceptance, a fresh authorization completed long-token exchange, Graph identity, messaging subscription and encrypted registration on 2026-11-17. This resolves the previously failing controlled-account OAuth attempt; #14/#8 still need live messaging/booking/lifecycle acceptance, and no public access approval is implied.
 - Public privacy/deletion copy was updated for staff profiles, encrypted account authorization, calendar sharing, Gmail send-only invitations and actual retention/manual deletion behavior. TypeScript/build checks passed; deployment `5ac727f1-02f1-44ba-805e-6a56a3451ca3` was fetched publicly and verified. Messaging logic and activation flags are unchanged.
 - Git follow-up: normal signing succeeded on the owner's retry; public-policy source was committed as `dc082cb`. This packet and the backlog are included in the feature branch as well as the earlier PR #6 preparation comment. Signing was not disabled. Meta submission is still pending the working demonstration and owner dashboard requirements.
 
@@ -22,7 +22,7 @@ Public onboarding for professional accounts outside the app's roles/assets requi
 
 ## Draft use-case explanations
 
-Use these descriptions only after the corresponding live flow is demonstrated; do not claim the failing OAuth flow already works.
+Use these descriptions only after the corresponding live flow is demonstrated. OAuth has now succeeded for an accepted professional tester; real DM/booking demonstration remains pending.
 
 ### Application purpose
 
@@ -83,8 +83,9 @@ Privacy and deletion pages were fetched publicly during preparation. Data deleti
 
 ## Submission checklist
 
-- [ ] Professional tester role accepted.
-- [ ] Native login, identity, subscription and real DM/reply work.
+- [x] Professional tester role accepted.
+- [x] Native login, identity and messaging subscription verified in a real callback.
+- [ ] Real DM/reply verified across the registered accounts.
 - [ ] Correct-calendar booking and cancellation verified live.
 - [ ] Actual access levels and dashboard prerequisites recorded.
 - [ ] App/business information and any requested verification complete.
@@ -94,4 +95,4 @@ Privacy and deletion pages were fetched publicly during preparation. Data deleti
 - [ ] Request submitted for the required two Instagram business permissions.
 - [ ] Meta approval recorded; reconnect externally owned accounts and validate before broad rollout.
 
-Approval is controlled by Meta. Adding testers is a pilot/testing step, not the intended permanent onboarding workflow for every distribuidora, and it is not represented as a proven fix for the current token rejection.
+Approval is controlled by Meta. Accepting the pending tester invitation was followed by a successful native authorization for this controlled account. That resolves this test's access block, not the requirement for Meta's approved public access; adding testers is not the intended permanent onboarding workflow for every distribuidora.

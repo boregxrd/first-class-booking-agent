@@ -5,19 +5,19 @@
 This is a **draft implementation/review PR, not a declaration that live multi-account Instagram onboarding is finished**.
 
 - **#9 is Finished:** minimal distribuidora database foundation, general DWC profile, calendar association, encrypted account registry and migration verified.
-- **#14 remains In progress:** portal/calendar/email onboarding works against real Google; Instagram authorization fails at the provider API stage.
-- **#8 remains In progress:** full application pipeline passes automated integration tests, but two real connected Instagram accounts have not passed live booking acceptance.
+- **#14 remains In progress:** portal/calendar/email onboarding and native Instagram OAuth now pass against real providers after the professional tester invitation was accepted. Live messaging/lifecycle demonstration remains pending.
+- **#8 remains In progress:** the general account and dinosaurio's professional account are registered/connected; controlled multi-account routing is enabled, awaiting real DM/booking/calendar acceptance.
 - **#15 remains In progress:** public/advanced Meta permission review preparation. The request packet is prepared, but no review has been submitted or approved.
 - **#6 remains separate:** actual gym WhatsApp number/templates/notification activation.
 - **#10 remains Félix's task:** real TikTok authorization, webhooks and messaging adapter. The registry/interface is prepared; TikTok messaging is not fabricated as working.
 
-The existing single-account bot remains active. Multi-account routing and WhatsApp notifications are disabled while onboarding is validated.
+The existing bot remains active. Multi-account routing is enabled for the registered active destinations for a controlled live test; WhatsApp notifications remain disabled. Broad public professional-account access still requires the Meta approval tracked in #15.
 
 ### Git/signing finalization
 
 The accumulated implementation commits are on `boregxrd/multi-account-foundation`, draft [PR #6](https://github.com/boregxrd/first-class-booking-agent/pull/6). The Mac signing agent initially refused the final commit overnight. After the owner's return, normal signing succeeded without disabling or bypassing signing. The final public-error classification was committed as `b9e59f7`; this branch also includes the previously pending handoff document, runbook/backlog updates and CLI help. No final edits are intentionally left outside the PR.
 
-The earlier pushed snapshot was independently tested with pending edits temporarily stashed, then the final branch was rechecked: **typecheck and all 110 tests passed**. The finalized deployed Worker is `d570e04c-a696-498b-9b7b-2759cac20d0d`, including grant/ID validation, private checkpoint inspection and the clearer unsupported-request label. This improves diagnostics; it is **not** a verified fix for the underlying Meta rejection.
+The earlier pushed snapshot was independently tested with pending edits temporarily stashed, then the branch was rechecked: **typecheck and all 110 tests passed**. The latest controlled-rollout Worker is `16e99117-fe03-4487-8cfb-de5755b3f241`. The historical provider rejection was followed by a successful live authorization after accepting the tester role; diagnostic code alone was not treated as proof of resolution.
 
 ## 1. Agreed business model
 
@@ -106,17 +106,18 @@ Coverage includes real local D1 migration/backfill, account isolation, encryptio
 - Enabled Gmail API, completed send-only consent and obtained real Gmail acceptance for Instagram invitation emails. The recipient reached Meta authorization/callback using an emailed invitation.
 - Installed the user-confirmed Instagram Login app ID and matching secret through stdin; the secret was not printed or committed.
 - Protected overview was verified: unauthenticated API returns 401, authenticated overview succeeds, public health returns 200.
+- After accepting the professional test account's Instagram Tester invitation, a fresh native authorization completed token exchange, Graph identity, `messages` subscription and encrypted account registration. It is connected to dinosaurio's existing calendar, with actual long-token expiry `2027-01-16T09:53:14.205Z`. Earlier profile-scoped callback failure alerts were resolved after this success; diagnostics are retained.
 
 Actual deployment settings remain:
 
 ```text
 META_MESSAGING_MODE=live
-MULTI_ACCOUNT_ENABLED=false
+MULTI_ACCOUNT_ENABLED=true
 WHATSAPP_NOTIFICATIONS_ENABLED=false
 WHATSAPP_ATTRIBUTION_TEMPLATES=false
 ```
 
-## 10. Unresolved Instagram rejection — do not lose this context
+## 10. Historical Instagram rejection and the successful tester-role retest
 
 The first generic callback error was **not expiry**: the state was consumed about seven seconds after starting. Diagnostics then isolated a successful initial authorization-code exchange followed by:
 
@@ -130,31 +131,28 @@ reference: 3202daf9-030b-4e28-a127-3599cc14a012
 
 Within the authorized checkpoint window, owner-side retries tested POST and versioned OAuth route variants. Meta rejected them too; a native short-token profile read also returned unsupported GET. Method changes did **not** fix the provider failure. Experimental variants and an unhelpful cross-family debug probe were removed. Final code retains the native Instagram exchange endpoint with an explicit serialized GET request, not a guessed Facebook Login fallback.
 
-**The precise underlying Meta account/app-access cause remains unconfirmed. Dinosaurio has no connected Instagram account yet.** The selected Instagram handle/professional-account eligibility and the app's required permission/tester/public-access state still need confirmation.
+**Update 2026-11-17:** the account holder confirmed that the professional account's separate Instagram Tester invitation had not been accepted. After accepting it and opening a fresh connection email, the same native flow succeeded, including the previously rejected long-token and identity steps. Dinosaurio now has a connected professional account. Granting both OAuth scopes was not sufficient while the tester role was pending. This successful controlled test does not grant approved public access for unrelated professional accounts.
 
 To make the next attempt useful, the callback now captures provider-reported known permissions and a safely represented short-token user ID as diagnostics only. Explicitly missing requested permissions fail early. Unknown scope strings are not logged, unsafe numeric account IDs are not silently rounded, and actual account binding still requires a successful Graph identity lookup and messaging subscription.
 
 Safe diagnostics persist stage, codes and bounded credential-redacted summaries. OAuth codes, access tokens and app secrets are not returned to the browser or retained in diagnostic text. Failed post-token operations may retain a profile-bound encrypted checkpoint for an owner-only **10-minute** retry window. The original deadline is not extended; purge is bounded after 15 minutes. No expired checkpoint is bypassed. Ownership conflicts never reassign the original account.
 
-The old callbacks/codes and emailed invitations already opened during these tests are one-use and cannot be refreshed into a new authorization. Existing diagnostic references are historical; their checkpoints have expired.
+The old callbacks/codes and emailed invitations already opened during these tests are one-use and cannot be refreshed into a new authorization. Existing diagnostic references are historical; their checkpoints have expired. Do not treat the old Unsupported request as the current connection status or revoke the successful connection just to clear that historical message.
 
 ## 11. Next live test
 
-1. Keep multi-account routing off.
-2. Confirm the intended professional Instagram account is different from the account already assigned to DWC, and is eligible for the Meta app's current permissions/tester roles or approved public messaging access.
-3. Generate **one new email invitation** from dinosaurio's portal card. On the owner's Mac, portal login can use `node scripts/owner.mjs --copy-token`, then paste into **Operator token** and **Load portal**. The equivalent email command is:
-   ```sh
-   node scripts/owner.mjs --email-instagram babf97b6-c023-46e0-aa90-96f4f592d00d
-   ```
-4. Open the newest email and deliberately start Instagram authorization. Do not refresh an already-used callback or reuse an opened one-use invitation.
-5. If it fails, capture the new diagnostic reference immediately. Within its window, the owner can use:
+1. Controlled routing is already enabled for the registered active accounts. Keep WhatsApp sending off during this test.
+2. From a different prospect Instagram account, DM the professional account connected to dinosaurio. Self/echo messages are ignored intentionally. Verify that the bot replies from the contacted account.
+3. Select an explicit future Dallas day/hour, supply/confirm the test booking name and phone, and approve the saved summary. Verify that the event/roster appears in **DWC — dinosaurio**, not the general calendar. A known existing active contact may correctly be blocked as a duplicate rather than silently transferred.
+4. Send a separate message to the existing general account and verify its destination remains the general calendar. Then test reschedule/cancel, disconnect isolation, and explicit reconnect with the same profile/calendar.
+5. No new OAuth email is needed for ordinary DMs. If a deliberate reconnect is required, generate one fresh invitation. Do not refresh an already-used callback or reuse an opened one-use invitation. If authorization fails, capture the new reference immediately. Within its window, the owner can use:
    ```sh
    node scripts/owner.mjs --inspect-instagram <new-reference>
    node scripts/owner.mjs --retry-instagram <new-reference>
    ```
    Inspection returns only safe metadata and does not connect the account or extend the window. Retry resumes only supported steps using the encrypted token; it never replays the login code.
-6. If it succeeds, verify actual account ID, profile/calendar mapping, expiry and messaging subscription before testing a real DM → approval → calendar event → reply.
-7. Only activate multi-account routing once the general account and the new trainer account both pass live tests. Enable real WhatsApp reminders only after #6 and template approval. TikTok remains #10.
+6. Record real DM/approval/calendar/reply and lifecycle evidence before marking #8/#14 finished. Local simulated-provider tests are not substituted for that evidence.
+7. Enable real WhatsApp reminders only after #6 and template approval. Arbitrary external-account onboarding needs #15; TikTok remains #10. Disable multi-account routing if the controlled live test reveals an isolation/routing issue, preserving saved attribution and calendar IDs.
 
 ## Review and rollout notes
 
@@ -162,7 +160,7 @@ The old callbacks/codes and emailed invitations already opened during these test
 - `docs/OWNER_PORTAL.md` contains owner/Google/Meta setup, credential rotation, provisioning recovery and diagnostic commands.
 - `jira-backlog.md` intentionally leaves #14 and #8 in progress. An email accepted by Gmail, a passing mock integration test or a generated short token is not treated as a finished live Instagram connection.
 - Commits are intentionally focused by schema, repository, authorization, crypto, Google transport, provisioning, portal, routing, email, tests and documentation so individual pieces remain discoverable.
-- This PR should remain **draft/unmerged** until the remaining live acceptance is understood. Production already has the additive schema and owner tooling deployed from the feature branch with multi-account activation gated off.
+- This PR should remain **draft/unmerged** until the remaining live acceptance is understood. Production has the additive schema, owner tooling and controlled registered-account routing deployed from the feature branch; public account approval and WhatsApp sending remain gated separately.
 
 ## 12. Meta public-access review preparation (#15)
 
@@ -171,5 +169,5 @@ The old callbacks/codes and emailed invitations already opened during these test
 - `docs/META_APP_REVIEW.md` contains draft purpose text, permission justifications, actual processor disclosures, stable reviewer-access considerations, screencast steps and a submission checklist. It is also preserved in the earlier [PR preparation comment](https://github.com/boregxrd/first-class-booking-agent/pull/6#issuecomment-6944248429).
 - Updated public privacy/deletion copy to describe actual staff profile/account credentials, owner-only Google authorization, reader calendars, send-only Gmail invitations, temporary checkpoint/email retention and manual account-data deletion. Deployed `5ac727f1-02f1-44ba-805e-6a56a3451ca3` and fetched both public pages successfully. This changes disclosures, not OAuth token behavior or activation flags.
 - A transient SSH signing-socket failure delayed these follow-up commits. Normal signing succeeded on retry (`dc082cb` for policy source); signing was not disabled and the prepared files are now part of this branch.
-- **No Meta review has been submitted.** A functional live demonstration, appropriate reviewer access, and any business/testing prerequisites shown by the owner's dashboard remain pending. Do not submit production owner credentials or a one-use expiring invitation as the sole reviewer entry point.
-- The latest owner-requested dinosaurio invitation was accepted by Gmail; one fresh native Instagram attempt can now be performed. Tester role acceptance and a successful provider connection are not assumed from the request to resend.
+- **No Meta review has been submitted.** Tester role acceptance and native OAuth are now verified; the real message/booking demonstration, appropriate reviewer access, and any remaining dashboard prerequisites are still pending. Do not submit production owner credentials or a one-use expiring invitation as the sole reviewer entry point.
+- The latest dinosaurio invitation has now led to an actual successful callback after tester acceptance, verified in the registry with a saved long-token expiry. Ordinary DM testing needs no further OAuth email. Public access and live booking acceptance are still separate gates.

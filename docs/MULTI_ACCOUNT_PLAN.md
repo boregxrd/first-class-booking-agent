@@ -41,6 +41,14 @@
 - [ ] Disconnecting one trainer account does not interrupt other trainers.
 - [ ] Owners see all calendars; trainers receive read-only access only to their own calendar.
 
+## Latest live milestone — accepted tester authorization
+
+- On 2026-11-17, after the account holder accepted the separate Instagram Tester invitation, the fresh emailed authorization completed all callback stages. The professional account is registered as connected to dinosaurio and its pre-existing calendar, with a provider-issued long-token expiry of `2027-01-16T09:53:14.205Z`.
+- The previous Unsupported request attempts had both OAuth permissions but lacked accepted tester-role access. They are historical failures, not the current state; associated past alerts were resolved after the successful callback, with their diagnostic details retained.
+- Enabled `MULTI_ACCOUNT_ENABLED=true` for the two registered connected destinations in deployment `16e99117-fe03-4487-8cfb-de5755b3f241`. Unknown/inactive/unconnected accounts still do not route. This is a controlled live test, not public Meta permission approval.
+- WhatsApp notification and attribution-template flags remain false. No real customer reminder sending was enabled.
+- Typecheck and 110 automated tests passed before activation. Next user action: send a DM **from another account** to the new professional account, then verify a confirmed test booking in dinosaurio's calendar and the main account's unchanged general destination. Live messaging/booking/lifecycle checkboxes stay pending until observed.
+
 ## Delivery
 
 Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserve #6 and Félix's #10 as separately owned provider activation/integration work. External authorizations, approved templates and real sharing/delivery are live gates, not simulated completion.
