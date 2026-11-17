@@ -195,6 +195,8 @@ test('permission diagnostics and read-only checkpoint inspection expose metadata
       assert.ok(error instanceof ConnectionFailure); failure = error; return true;
     });
     assert.deepEqual(failure!.details.grantedPermissions, ['instagram_business_basic', 'instagram_business_manage_messages']);
+    assert.equal(failure!.details.category, 'unsupported_request');
+    assert.match(failure!.publicMessage(), /unsupported API request/);
     assert.equal(failure!.details.unknownPermissionCount, 1); assert.equal(failure!.details.shortUserId, '12345');
     assert.doesNotMatch(JSON.stringify(failure!.details), /IG-private-short-token|private-unknown-scope-value/);
     const checkpointId = failure!.checkpointId!, before = (await vaultFor(f.env).get(checkpointId))!;
