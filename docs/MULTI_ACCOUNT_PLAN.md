@@ -98,3 +98,16 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - Deployed `a935704b-1cdf-40fb-a8fe-b1cc0318033e`: bounded credential-redacted summaries, optional encrypted profile-bound token checkpoints, owner-only retry without replaying OAuth codes, and checkpoint expiry/cleanup. No account is considered connected until identity/subscription/save succeeds.
 - All **107 tests** pass, including short/long checkpoint recovery, preservation of real token expiry, denial to unauthenticated/expired retries and secret redaction.
 - New invitation `db32a284-ad9f-4e95-a303-acfbd1ea07a2` was accepted by Gmail. Waiting for the recipient to authorize once under the checkpoint-capable deployment; no new callback was observed during a bounded check. Later retries can use the owner endpoint within the original 10-minute window when a checkpoint exists.
+
+### Overnight handoff
+
+- Reference `3202daf9-030b-4e28-a127-3599cc14a012` captured Meta's exact HTTP 400 / code 100 reason: **Unsupported request - method type: get**. POST and versioned-route probes did not resolve it; a native profile read with the retained short token also failed. Experimental request variants and the unhelpful cross-family debug probe are not retained in final code.
+- The exact underlying Meta account/app-access cause remains unconfirmed. No Instagram account has been attached to dinosaurio, no expired retry checkpoint is bypassed, and multi-account routing remains disabled.
+- Final deployed version: `35a72949-bdcb-4bb9-a148-d23c3db71788`; typecheck and **110 tests** passed. Safe permission/user-ID diagnostics, owner-only native inspection and unsafe-numeric-ID protection are included for the next fresh attempt.
+- All old opened invitations and callback codes are one-use. Tomorrow's test must create a fresh invitation; no further emails are sent overnight. Full implementation/setup history, known issues and morning reproduction steps are in `MULTI_ACCOUNT_HANDOFF.md` and the draft PR description.
+
+### Finalization after signing unlock
+
+- Normal signed commits work again; the previously pending final error label, CLI help and handoff/runbook/backlog edits are included in draft PR #6 rather than being left only on the workstation.
+- Final branch checks: typecheck, all **110 tests**, owner CLI syntax and diff checks passed. Deployed Worker `d570e04c-a696-498b-9b7b-2759cac20d0d`; multi-account routing and WhatsApp notifications remain disabled.
+- Meta's underlying rejection is still unresolved. Next: confirm the exact intended Instagram handle, professional account type and app-access/tester eligibility, then issue one fresh invitation. Reusing an old callback or opened email invitation cannot restart authorization.

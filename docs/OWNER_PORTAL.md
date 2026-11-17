@@ -91,6 +91,8 @@ Failures after a token was obtained may retain it in an **encrypted, profile-bou
 
 `node scripts/owner.mjs --retry-instagram <diagnostic-reference>` uses the protected owner endpoint to resume the failed token/profile/subscription steps, without replaying the one-use authorization code or returning tokens. It preserves a long token's actual provider expiry, and does not extend the original retry deadline. Success deletes the checkpoint and resolves the reference. Expired/missing checkpoints require a fresh invitation; use the latest reference if another stage fails. Older failure records made before checkpoint support cannot be resumed.
 
+`--inspect-instagram <reference>` performs a read-only native Graph identity check and returns safe token-family/length/expiry/known-permission metadata, never the token. It does not connect an account, extend its retry deadline, or call a different login family's token endpoints. New code-exchange diagnostics retain only allowlisted provider-reported permission names (unknown strings are counted, not logged), plus safely represented provider user ID metadata. Explicitly missing required grants fail before a misleading long-token request; an omitted permissions field is not fabricated as granted. Unsafe numeric IDs cannot be silently rounded into an account binding.
+
 An account already assigned to DWC cannot be connected to another distribuidora implicitly; the existing account mapping and credentials are retained. Use a different professional account for a new trainer or arrange an explicit reassignment. Token responses may be flat or wrapped in a single-entry `data` array; multi-entry/invalid responses fail rather than selecting an arbitrary account.
 
 ## 6. WhatsApp, TikTok and reminder templates
