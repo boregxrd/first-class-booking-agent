@@ -1,5 +1,5 @@
 export type ConnectionStage = 'callback' | 'state' | 'short_token' | 'long_token' | 'account_identity' | 'messaging_subscription' | 'save_account';
-export type ConnectionFailureKind = 'invalid_callback' | 'state_expired_or_used' | 'provider_rejected' | 'invalid_response' | 'account_already_assigned' | 'network_or_internal';
+export type ConnectionFailureKind = 'invalid_callback' | 'state_expired_or_used' | 'provider_rejected' | 'invalid_response' | 'permissions_missing' | 'account_already_assigned' | 'network_or_internal';
 type ProviderCategory = 'client_credentials' | 'redirect_uri' | 'authorization_code' | 'permissions' | 'unknown';
 
 /** Never retain provider bodies, URLs, codes supplied by the user, tokens or exception messages. */
@@ -9,10 +9,12 @@ export class ConnectionFailure extends Error {
   providerAccountId?: string;
   checkpointId?: string;
   constructor(readonly stage: ConnectionStage, readonly kind: ConnectionFailureKind,
-    readonly details: { httpStatus?: number; providerCode?: number; providerSubcode?: number; category?: ProviderCategory; providerSummary?: string; shortTokenExpiresIn?: number } = {}) {
+    readonly details: { httpStatus?: number; providerCode?: number; providerSubcode?: number; category?: ProviderCategory; providerSummary?: string;
+      shortTokenExpiresIn?: number; grantedPermissions?: string[]; unknownPermissionCount?: number; shortUserId?: string; shortUserIdUnsafeNumber?: boolean } = {}) {
     super(`Instagram connection failed at ${stage}: ${kind}`);
   }
   publicMessage() {
+    if (this.kind === 'permissions_missing') return 'Instagram did not grant both basic and messaging permissions. Check the professional account type and the app’s approved access/tester roles, then authorize with a fresh invitation.';
     if (this.kind === 'account_already_assigned') return 'This Instagram account is already connected to another DWC profile. Its existing assignment was not changed. Use a different professional account or ask the owner to arrange an explicit reassignment.';
     if (this.kind === 'state_expired_or_used') return 'This Instagram authorization link expired or was already used. Ask the owner for a fresh invitation; refreshing this callback cannot retry an authorization code.';
     if (this.details.category === 'client_credentials') return 'Instagram rejected the application credentials. The gym owner must check the Instagram Login App ID and matching App Secret.';
