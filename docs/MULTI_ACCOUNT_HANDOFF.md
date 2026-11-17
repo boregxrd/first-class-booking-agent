@@ -7,6 +7,7 @@ This is a **draft implementation/review PR, not a declaration that live multi-ac
 - **#9 is Finished:** minimal distribuidora database foundation, general DWC profile, calendar association, encrypted account registry and migration verified.
 - **#14 remains In progress:** portal/calendar/email onboarding works against real Google; Instagram authorization fails at the provider API stage.
 - **#8 remains In progress:** full application pipeline passes automated integration tests, but two real connected Instagram accounts have not passed live booking acceptance.
+- **#15 remains In progress:** public/advanced Meta permission review preparation. The request packet is prepared, but no review has been submitted or approved.
 - **#6 remains separate:** actual gym WhatsApp number/templates/notification activation.
 - **#10 remains Félix's task:** real TikTok authorization, webhooks and messaging adapter. The registry/interface is prepared; TikTok messaging is not fabricated as working.
 
@@ -162,3 +163,13 @@ The old callbacks/codes and emailed invitations already opened during these test
 - `jira-backlog.md` intentionally leaves #14 and #8 in progress. An email accepted by Gmail, a passing mock integration test or a generated short token is not treated as a finished live Instagram connection.
 - Commits are intentionally focused by schema, repository, authorization, crypto, Google transport, provisioning, portal, routing, email, tests and documentation so individual pieces remain discoverable.
 - This PR should remain **draft/unmerged** until the remaining live acceptance is understood. Production already has the additive schema and owner tooling deployed from the feature branch with multi-account activation gated off.
+
+## 12. Meta public-access review preparation (#15)
+
+- The owner-provided dashboard shows the two native business permissions as **Ready for testing**, each with 0 API calls. The app is Published, but that is not proof of approved access for externally owned accounts.
+- The user agreed to prepare Meta review in parallel with testing through an explicitly accepted Instagram Tester role. Only `instagram_business_basic` and `instagram_business_manage_messages` are planned for this request; unrelated ads, content publishing, insights, comments and Human Agent scopes are not requested merely because the catalog lists them.
+- `docs/META_APP_REVIEW.md` contains draft purpose text, permission justifications, actual processor disclosures, stable reviewer-access considerations, screencast steps and a submission checklist. It is also preserved in the earlier [PR preparation comment](https://github.com/boregxrd/first-class-booking-agent/pull/6#issuecomment-6944248429).
+- Updated public privacy/deletion copy to describe actual staff profile/account credentials, owner-only Google authorization, reader calendars, send-only Gmail invitations, temporary checkpoint/email retention and manual account-data deletion. Deployed `5ac727f1-02f1-44ba-805e-6a56a3451ca3` and fetched both public pages successfully. This changes disclosures, not OAuth token behavior or activation flags.
+- A transient SSH signing-socket failure delayed these follow-up commits. Normal signing succeeded on retry (`dc082cb` for policy source); signing was not disabled and the prepared files are now part of this branch.
+- **No Meta review has been submitted.** A functional live demonstration, appropriate reviewer access, and any business/testing prerequisites shown by the owner's dashboard remain pending. Do not submit production owner credentials or a one-use expiring invitation as the sole reviewer entry point.
+- The latest owner-requested dinosaurio invitation was accepted by Gmail; one fresh native Instagram attempt can now be performed. Tester role acceptance and a successful provider connection are not assumed from the request to resend.

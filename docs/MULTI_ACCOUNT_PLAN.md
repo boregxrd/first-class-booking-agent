@@ -111,3 +111,9 @@ Tasks #9 → #14 → #8, in focused commits with local acceptance tests. Preserv
 - Normal signed commits work again; the previously pending final error label, CLI help and handoff/runbook/backlog edits are included in draft PR #6 rather than being left only on the workstation.
 - Final branch checks: typecheck, all **110 tests**, owner CLI syntax and diff checks passed. Deployed Worker `d570e04c-a696-498b-9b7b-2759cac20d0d`; multi-account routing and WhatsApp notifications remain disabled.
 - Meta's underlying rejection is still unresolved. Next: confirm the exact intended Instagram handle, professional account type and app-access/tester eligibility, then issue one fresh invitation. Reusing an old callback or opened email invitation cannot restart authorization.
+
+### Meta access-review preparation
+
+- Added #15 at the user's request: prepare external-account/advanced access for the two native Instagram business permissions, while validating with an accepted professional tester role.
+- `docs/META_APP_REVIEW.md` provides the draft submission packet. The owner screenshot/text shows Ready for testing, not a public-access approval. No Meta request has been submitted yet; the working live demonstration is still a prerequisite to an honest submission.
+- Current privacy/deletion pages cover staff connections, encrypted authorization, Gmail send-only invitations and actual retention/deletion behavior. They were deployed and publicly fetched; source signing succeeded on retry as `dc082cb`.
