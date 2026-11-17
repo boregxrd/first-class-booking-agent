@@ -5,8 +5,9 @@
 This is a **draft implementation/review PR, not a declaration that live multi-account Instagram onboarding is finished**.
 
 - **#9 is Finished:** minimal distribuidora database foundation, general DWC profile, calendar association, encrypted account registry and migration verified.
-- **#14 remains In progress:** portal/calendar/email onboarding and native Instagram OAuth now pass against real providers after the professional tester invitation was accepted. Live messaging/lifecycle demonstration remains pending.
-- **#8 remains In progress:** the general account and dinosaurio's professional account are registered/connected; controlled multi-account routing is enabled, awaiting real DM/booking/calendar acceptance.
+- **#14 remains In progress:** portal/calendar/email onboarding and native Instagram OAuth pass against real providers. Dinosaurio messaging is confirmed; remaining lifecycle/reconnect and review demonstration are pending.
+- **#8 remains In progress:** registered-account routing is enabled; live dinosaurio replies and protected real-calendar creation/cancellation are verified. Actual Instagram booking approval, general-account comparison and remaining lifecycle acceptance are pending.
+- **#16 is Finished:** deterministic Dallas date/weekday guards and protected attributed-calendar create/cancel acceptance verified on 2026-11-17.
 - **#15 remains In progress:** public/advanced Meta permission review preparation. The request packet is prepared, but no review has been submitted or approved.
 - **#6 remains separate:** actual gym WhatsApp number/templates/notification activation.
 - **#10 remains Félix's task:** real TikTok authorization, webhooks and messaging adapter. The registry/interface is prepared; TikTok messaging is not fabricated as working.
@@ -17,7 +18,7 @@ The existing bot remains active. Multi-account routing is enabled for the regist
 
 The accumulated implementation commits are on `boregxrd/multi-account-foundation`, draft [PR #6](https://github.com/boregxrd/first-class-booking-agent/pull/6). The Mac signing agent initially refused the final commit overnight. After the owner's return, normal signing succeeded without disabling or bypassing signing. The final public-error classification was committed as `b9e59f7`; this branch also includes the previously pending handoff document, runbook/backlog updates and CLI help. No final edits are intentionally left outside the PR.
 
-The earlier pushed snapshot was independently tested with pending edits temporarily stashed, then the branch was rechecked: **typecheck and all 110 tests passed**. The latest controlled-rollout Worker is `16e99117-fe03-4487-8cfb-de5755b3f241`. The historical provider rejection was followed by a successful live authorization after accepting the tester role; diagnostic code alone was not treated as proof of resolution.
+The earlier pushed snapshot was independently tested with pending edits temporarily stashed. Current checks: **typecheck and all 121 tests passed**. Latest Worker: `1097b88d-8718-4e74-9a23-b2b5bbfe1fe6`, including date guards (`c7d1c4a`) and protected account-target tests (`594a531`). The historical provider rejection was followed by a successful live authorization after accepting the tester role; diagnostic code alone was not treated as proof of resolution.
 
 ## 1. Agreed business model
 
@@ -87,8 +88,8 @@ The earlier pushed snapshot was independently tested with pending edits temporar
 Latest checks:
 
 - `npm run typecheck` — passed.
-- `npx tsx --test --test-reporter=dot src/llm-integration/tests/*.test.ts src/calendar/*.test.ts src/bookings/*.test.ts` — **110 tests passed**.
-- `node --check scripts/owner.mjs` — passed.
+- `npx tsx --test --test-reporter=dot src/llm-integration/tests/*.test.ts src/calendar/*.test.ts src/bookings/*.test.ts` — **121 tests passed**.
+- `node --check scripts/chat.mjs` — passed; owner CLI syntax previously verified.
 - Worker dry-run/deployed builds — passed.
 - `git diff --check` — passed; private credential files are not tracked.
 
@@ -141,6 +142,8 @@ The old callbacks/codes and emailed invitations already opened during these test
 
 ## 11. Next live test
 
+Already verified on 2026-11-17: the user confirmed replies from dinosaurio's connected account; server inspection found **11 processed inbound and 11 accepted outbound messages**. Protected real-calendar acceptance is documented below. Remaining steps refer to actual Instagram booking/lifecycle acceptance.
+
 1. Controlled routing is already enabled for the registered active accounts. Keep WhatsApp sending off during this test.
 2. From a different prospect Instagram account, DM the professional account connected to dinosaurio. Self/echo messages are ignored intentionally. Verify that the bot replies from the contacted account.
 3. Select an explicit future Dallas day/hour, supply/confirm the test booking name and phone, and approve the saved summary. Verify that the event/roster appears in **DWC — dinosaurio**, not the general calendar. A known existing active contact may correctly be blocked as a duplicate rather than silently transferred.
@@ -171,3 +174,14 @@ The old callbacks/codes and emailed invitations already opened during these test
 - A transient SSH signing-socket failure delayed these follow-up commits. Normal signing succeeded on retry (`dc082cb` for policy source); signing was not disabled and the prepared files are now part of this branch.
 - **No Meta review has been submitted.** Tester role acceptance and native OAuth are now verified; the real message/booking demonstration, appropriate reviewer access, and any remaining dashboard prerequisites are still pending. Do not submit production owner credentials or a one-use expiring invitation as the sole reviewer entry point.
 - The latest dinosaurio invitation has now led to an actual successful callback after tester acceptance, verified in the registry with a saved long-token expiry. Ordinary DM testing needs no further OAuth email. Public access and live booking acceptance are still separate gates.
+
+## 13. Date fix and real attributed-calendar acceptance — 2026-11-17
+
+- Server/Dallas date was Tuesday **November 17, 2026**; November 18 is Wednesday. Intake rejects contradictory weekday/date and relative/date claims, invalid/ambiguous dates, and invalidates stale proposals. A bare yes cannot approve a conflicting date. The model receives calculated Dallas/calendar facts; contradictory closure claims and unsupported regular-class booking offers are corrected.
+- A programmer/test claim in DMs does not bypass the 30-day eligibility rule or overwrite the booking name. The owner's existing personal booking/history was preserved.
+- Authenticated `/test/chat` accepts an explicit registered account target, isolates synthetic identities per target, preserves normal eligibility and records `operator_test` attribution. It creates no Meta replies or WhatsApp jobs. Public webhook extensions cannot set this internal target.
+- On Worker `1097b88d-8718-4e74-9a23-b2b5bbfe1fe6`, conversation `operator-dino-20261117` proposed and confirmed **Prueba Calendario**, Wednesday November 18 at **08:00 Dallas** (`14:00Z`). Real Google readback showed organizer **DWC — dinosaurio**, one prospect, and booking `trial_400a1a8e-bb49-4121-9ad0-39c573cac6c9`. Replaying message `confirm` returned the same booking/revision/event; D1 contains exactly one booking for that synthetic customer.
+- Cancellation required a separate proposal/approval. Booking became `cancelled`, revision 2, at `2026-11-17T11:19:24.406Z`; fresh Google readback showed **0 prospects** and the test name removed. The empty class-slot event remains by design.
+- D1 independently confirmed distribuidora `babf97b6-c023-46e0-aa90-96f4f592d00d`, social account `instagram:17841440390520251`, origin `operator_test`, and **0 notification jobs** for the booking.
+- Live protected regression `operator-date-20261117` rejected “martes 18 de noviembre de 2026” with the correct Wednesday date, zero model tokens and no booking.
+- These are real D1/OpenAI/Google checks via authenticated synthetic transport. Actual Instagram approval→calendar booking, general-account comparison, rescheduling and disconnect/reconnect checks remain pending for #8/#14. Meta public approval, WhatsApp activation and TikTok remain their existing separate tasks.

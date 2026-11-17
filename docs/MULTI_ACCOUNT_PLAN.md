@@ -47,7 +47,7 @@
 - The previous Unsupported request attempts had both OAuth permissions but lacked accepted tester-role access. They are historical failures, not the current state; associated past alerts were resolved after the successful callback, with their diagnostic details retained.
 - Enabled `MULTI_ACCOUNT_ENABLED=true` for the two registered connected destinations in deployment `16e99117-fe03-4487-8cfb-de5755b3f241`. Unknown/inactive/unconnected accounts still do not route. This is a controlled live test, not public Meta permission approval.
 - WhatsApp notification and attribution-template flags remain false. No real customer reminder sending was enabled.
-- Typecheck and 110 automated tests passed before activation. Next user action: send a DM **from another account** to the new professional account, then verify a confirmed test booking in dinosaurio's calendar and the main account's unchanged general destination. Live messaging/booking/lifecycle checkboxes stay pending until observed.
+- Initial activation passed 110 automated tests. The user subsequently confirmed dinosaurio replies (11 processed inbound/11 accepted outbound observed). Current suite: **121 tests**, typecheck passed. Protected real-calendar creation/idempotency/cancellation passed on Worker `1097b88d-8718-4e74-9a23-b2b5bbfe1fe6`: one attributed synthetic booking, then cancelled revision 2 and zero roster prospects/notification jobs. See handoff §13 for evidence. Actual Instagram booking approval, main-account comparison and remaining lifecycle checks stay pending.
 
 ## Delivery
 
