@@ -20,10 +20,15 @@ async function fixture() {
   return { db, env, profile, state, dispose };
 }
 
-const provider: typeof fetch = async (input) => {
+const provider: typeof fetch = async (input, init) => {
   const url = String(input);
   if (url.includes('api.instagram.com/oauth')) return Response.json({ data: [{ access_token: 'private-short-token' }] });
-  if (url.includes('/access_token')) return Response.json({ access_token: 'private-long-token', expires_in: 3600 });
+  if (url.includes('/access_token')) {
+    assert.equal(typeof input, 'string', 'serialize the full Meta exchange URL explicitly');
+    assert.equal(init?.method, 'GET');
+    assert.equal(new URL(url).searchParams.get('grant_type'), 'ig_exchange_token');
+    return Response.json({ access_token: 'private-long-token', expires_in: 3600 });
+  }
   if (url.includes('/me?')) return Response.json({ user_id: '12345', username: 'trainer.test' });
   return Response.json({ success: true });
 };
@@ -159,5 +164,65 @@ test('an account already assigned to DWC yields an assignment error without movi
     });
     assert.equal((await new AccountStore(f.db).publicAccounts())[0]?.distribuidora_id, 'dwc');
     assert.equal((await vaultFor(f.env).get('social:instagram:12345'))?.accessToken, 'existing-dwc-token');
+  } finally { await f.dispose(); }
+});
+
+test('reported missing Instagram permissions stop before exchange instead of producing a misleading later error', async () => {
+  const f = await fixture();
+  try {
+    let calls = 0;
+    await assert.rejects(completeConnection(f.env, 'instagram', f.state, 'code', async () => {
+      calls++; return Response.json({ access_token: 'private-short-token', permissions: ['instagram_business_basic'] });
+    }), (error) => {
+      assert.ok(error instanceof ConnectionFailure);
+      assert.equal(error.kind, 'permissions_missing'); assert.equal(error.stage, 'short_token');
+      assert.deepEqual(error.details.grantedPermissions, ['instagram_business_basic']);
+      assert.match(error.publicMessage(), /professional account type/);
+      return true;
+    });
+    assert.equal(calls, 1);
+    assert.equal((await new AccountStore(f.db).publicAccounts()).length, 0);
+  } finally { await f.dispose(); }
+});
+
+test('permission diagnostics and read-only checkpoint inspection expose metadata, never token values or unknown scope strings', async () => {
+  const f = await fixture();
+  try {
+    let failure: ConnectionFailure | undefined;
+    await assert.rejects(completeConnection(f.env, 'instagram', f.state, 'code', async (input) => String(input).includes('api.instagram.com/oauth')
+      ? Response.json({ access_token: 'IG-private-short-token', user_id: '12345', permissions: ['instagram_business_basic', 'instagram_business_manage_messages', 'private-unknown-scope-value'] })
+      : Response.json({ error: { code: 100, message: 'Unsupported request - method type: get' } }, { status: 400 })), (error) => {
+      assert.ok(error instanceof ConnectionFailure); failure = error; return true;
+    });
+    assert.deepEqual(failure!.details.grantedPermissions, ['instagram_business_basic', 'instagram_business_manage_messages']);
+    assert.equal(failure!.details.unknownPermissionCount, 1); assert.equal(failure!.details.shortUserId, '12345');
+    assert.doesNotMatch(JSON.stringify(failure!.details), /IG-private-short-token|private-unknown-scope-value/);
+    const checkpointId = failure!.checkpointId!, before = (await vaultFor(f.env).get(checkpointId))!;
+    const reference = crypto.randomUUID();
+    await alert(f.db, 'instagram_connection_failed', reference, JSON.stringify({ distribuidoraId: f.profile.id, checkpointId }));
+    const { retryInstagramConnection } = await import('../../accounts/connections.js');
+    const inspection = await retryInstagramConnection(f.env, reference, async (input) => {
+      assert.equal(new URL(String(input)).hostname, 'graph.instagram.com');
+      return Response.json({ user_id: '12345', username: 'trainer.test' });
+    }, true);
+    assert.equal(inspection.checkpointInspection?.tokenFamily, 'instagram');
+    assert.equal(inspection.checkpointInspection?.identityStatus, 200);
+    assert.doesNotMatch(JSON.stringify(inspection), /IG-private-short-token|private-unknown-scope-value/);
+    assert.equal((await vaultFor(f.env).get(checkpointId))?.checkpoint?.resumeUntil, before.checkpoint!.resumeUntil);
+    assert.equal((await new AccountStore(f.db).publicAccounts()).length, 0);
+  } finally { await f.dispose(); }
+});
+
+test('unsafe numeric provider IDs are never silently rounded into account mappings', async () => {
+  const f = await fixture();
+  try {
+    await assert.rejects(completeConnection(f.env, 'instagram', f.state, 'code', async (input, init) => String(input).includes('/me?')
+      ? Response.json({ user_id: Number.MAX_SAFE_INTEGER + 2, username: 'trainer.test' }) : provider(input, init)), (error) => {
+      assert.ok(error instanceof ConnectionFailure);
+      assert.equal(error.stage, 'account_identity'); assert.equal(error.kind, 'invalid_response');
+      assert.equal(error.providerAccountId, undefined);
+      return true;
+    });
+    assert.equal((await new AccountStore(f.db).publicAccounts()).length, 0);
   } finally { await f.dispose(); }
 });
