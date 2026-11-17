@@ -101,8 +101,8 @@ export function createAccountRoutes() {
     }
   });
   routes.post('/admin/api/connections/retry-instagram', async (c) => {
-    const { reference } = z.object({ reference: z.string().uuid() }).strict().parse(await c.req.json());
-    try { return c.json(await retryInstagramConnection(c.env, reference)); }
+    const { reference, inspectOnly } = z.object({ reference: z.string().uuid(), inspectOnly: z.boolean().default(false) }).strict().parse(await c.req.json());
+    try { return c.json(await retryInstagramConnection(c.env, reference, fetch, inspectOnly)); }
     catch (error) {
       if (error instanceof ConnectionRetryError) return c.json({ error: error.message }, 409);
       if (error instanceof ConnectionFailure) {

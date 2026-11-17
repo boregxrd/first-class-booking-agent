@@ -67,9 +67,9 @@ if (process.argv.includes('--setup')) {
     console.error(`Invitation email request ID (reuse on retry): ${requestId}`);
     routes[command] = [`/profiles/${encodeURIComponent(process.argv[3])}/instagram-invitation`, {}];
   }
-  if (command === '--retry-instagram') {
+  if (command === '--retry-instagram' || command === '--inspect-instagram') {
     if (!process.argv[3]) throw new Error('Usage: --retry-instagram <diagnostic-reference>');
-    routes[command] = ['/connections/retry-instagram', { reference: process.argv[3] }];
+    routes[command] = ['/connections/retry-instagram', { reference: process.argv[3], ...(command === '--inspect-instagram' ? { inspectOnly: true } : {}) }];
   }
   if (['--inspect-calendar', '--provision'].includes(command)) {
     if (!process.argv[3]) throw new Error(`Usage: ${command} <profile-id>`);
