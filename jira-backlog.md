@@ -7,7 +7,7 @@ Backlog compartido de Manu y Félix (Bangfeal). Este archivo es la fuente de ver
 | Estado | Tareas |
 |---|---:|
 | Todo | 6 |
-| In progress | 2 |
+| In progress | 3 |
 | Finished | 6 |
 
 El estado y la verificación de cada tarea se reflejan en su sección y notas; las tareas en Todo siguen pendientes de verificación.
@@ -16,6 +16,7 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 
 | ID | Tarea | Responsable | Progreso / notas |
 |---|---|---|---|
+| 15 | Preparar y tramitar acceso Meta para conectar cuentas profesionales externas sin alta manual como testers. | Manu | Inicio: 2026-11-17. Acordado con el usuario. Permisos business_basic y business_manage_messages aparecen Ready for testing, 0 llamadas; no acredita aprobación pública. Paquete de justificaciones, demo e instrucciones preparado en docs/META_APP_REVIEW.md y comentario de PR #6. Políticas públicas actualizadas a onboarding/Gmail/retención, verificadas tras desplegar 5ac727f1-02f1-44ba-805e-6a56a3451ca3; fuente firmada en dc082cb al reintentar. Añadir/aceptar cuenta profesional como Instagram Tester en paralelo para #14. No enviado a Meta: faltan demo funcional, acceso de revisor y requisitos exactos del formulario. |
 | 2 | Pulir el lenguaje del bot para que suene más natural. | Félix | Pendiente. |
 | 4 | Enviar el mensaje de confirmación solo cuando la reserva esté confirmada. | Félix | Pendiente. |
 | 6 | Conectar WhatsApp mediante el número de teléfono. | Manu | Pendiente. |
@@ -27,7 +28,7 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 
 | ID | Tarea | Responsable | Progreso / notas |
 |---|---|---|---|
-| 14 | Implementar portal de onboarding, credenciales multicuenta y creación/compartición automática de calendarios. | Manu | Inicio: 2026-11-14. Google/calendario y Gmail reales verificados; Meta instalado. Ref 3202daf9-030b-4e28-a127-3599cc14a012: emisión inicial correcta; long token y lectura de perfil rechazan con HTTP 400/código 100, Unsupported request. Causa de cuenta/acceso sin confirmar; no se marca resuelta por mejorar diagnósticos. Native exchange, permisos/IDs seguros, checkpoint propietario 10 min e inspección sin tokens; no reasigna DWC. Firma Git restablecida, cambios finales incluidos en PR #6 draft. Desplegada d570e04c-a696-498b-9b7b-2759cac20d0d; typecheck/110 tests correctos. Pendiente confirmar handle profesional/eligibilidad Meta y autorizar una invitación nueva; callbacks e invitaciones ya usados no se reutilizan. Dinosaurio sin Instagram, #14 sigue en curso. Handoff completo en docs/MULTI_ACCOUNT_HANDOFF.md. |
+| 14 | Implementar portal de onboarding, credenciales multicuenta y creación/compartición automática de calendarios. | Manu | Inicio: 2026-11-14. Google/calendario y Gmail reales verificados; Meta instalado. Referencia e7f77ccd-1862-42c7-ba38-1c3ab4317d9a: ambas permissions business concedidas, long token HTTP 400/código 100 Unsupported request. Usuario confirmó conversión a Business, pero no había aceptado la invitación de Instagram Tester; aceptar rol es distinto de consentir OAuth. Se indica aceptar rol antes de probar invitación nueva 982eaa01-0bc3-4ae7-9410-0af74b2abf88 (Gmail accepted). Rol pendiente es hipótesis concreta, no causa resuelta hasta probar. Checkpoint propietario 10 min, diagnósticos saneados y guardas de asignación permanecen. Dinosaurio aún sin Instagram; typecheck/110 tests correctos, #14 en curso. Material y políticas de revisión en #15, handoff en docs/MULTI_ACCOUNT_HANDOFF.md. |
 | 8 | Implementar soporte para varias cuentas con contexto compartido y calendario de atribución por distribuidora. | Manu | Inicio: 2026-11-14. Routing, credenciales aisladas, atribución persistente, duplicados activos entre cuentas, recuperación/cancelación por calendario guardado y WhatsApp central implementados. Typecheck y 110 tests correctos. Prueba integral con webhook firmado, inbox D1 real, queue/factory/agente productivos, cliente Calendar y respuesta por cuenta origen para dos distribuidoras y DWC; infraestructura externa simulada. Google/calendario dinosaurio y Gmail reales verificados. MULTI_ACCOUNT_ENABLED=false: pendiente resolver rechazo OAuth de #14 y probar conexiones/DM/reserva reales en dos cuentas antes de activar. WhatsApp real y plantilla con origen requieren #6/aprobación Meta; TikTok sigue con Félix en #10. Handoff completo en docs/MULTI_ACCOUNT_HANDOFF.md. |
 
 ## Finished
