@@ -24,17 +24,24 @@ export function createServices(env: Env) {
   const bookings = new D1BookingService(env.DB, calendarClient, undefined, { calendarForId, distribuidoraId: 'dwc' });
   const templateSender = new MetaWhatsAppTemplateSender(env);
   return {
-    calendarClient, store, bookings, templateSender, textSender: new MetaTextSender(env),
+    calendarClient, calendarForId, store, bookings, templateSender, textSender: new MetaTextSender(env),
     // Delivery receipts and cron processing do not need an OpenAI key.
     get processor() {
       const legacy = createAgentProcessor(env, store, bookings);
       return async (message: import('../../model.js').InboundMessage) => {
-        if (env.MULTI_ACCOUNT_ENABLED !== 'true' || message.identity.businessAccountId === DIRECT_CHAT_ACCOUNT) return legacy(message);
-        const scoped = await routedEnvironment(env, message.identity);
+        let routeIdentity = message.identity;
+        if (message.operatorTestAccountId) {
+          if (message.identity.businessAccountId !== DIRECT_CHAT_ACCOUNT) throw new Error('Operator routing target is only allowed in the protected direct-chat namespace');
+          const target = await env.DB!.prepare("SELECT platform,provider_account_id FROM social_accounts WHERE id=? AND platform IN ('instagram','whatsapp')")
+            .bind(message.operatorTestAccountId).first<{ platform: 'instagram' | 'whatsapp'; provider_account_id: string }>();
+          if (!target) throw new Error('Registered test target required');
+          routeIdentity = { ...message.identity, channel: target.platform, businessAccountId: target.provider_account_id };
+        } else if (env.MULTI_ACCOUNT_ENABLED !== 'true' || message.identity.businessAccountId === DIRECT_CHAT_ACCOUNT) return legacy(message);
+        const scoped = await routedEnvironment(env, routeIdentity);
         if (!scoped) throw new Error('Receiving account is unavailable; reconnect before retrying');
         const service = new D1BookingService(env.DB!, calendarForId(scoped.route.distribuidora.google_calendar_id!), undefined, {
           calendarForId, distribuidoraId: scoped.route.distribuidora.id, socialAccountId: scoped.route.account.id,
-          originChannel: message.identity.channel, originHandle: scoped.route.account.handle,
+          originChannel: message.operatorTestAccountId ? 'operator_test' : message.identity.channel, originHandle: scoped.route.account.handle,
         });
         return createAgentProcessor(scoped.env, store, service)(message);
       };

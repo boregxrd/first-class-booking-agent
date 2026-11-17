@@ -27,7 +27,8 @@ if (!token) throw new Error('Run npm run chat:setup first, or set DIRECT_CHAT_TO
 async function send(conversationId, text, messageId = randomUUID()) {
   const response = await fetch(new URL('/test/chat', baseUrl), {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversationId, messageId, text }), signal: AbortSignal.timeout(120_000),
+    body: JSON.stringify({ conversationId, messageId, text,
+      ...(process.env.DIRECT_CHAT_SOCIAL_ACCOUNT_ID ? { targetSocialAccountId: process.env.DIRECT_CHAT_SOCIAL_ACCOUNT_ID } : {}) }), signal: AbortSignal.timeout(120_000),
   });
   const body = await response.json();
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body)} (conversation ${conversationId}, message ${messageId}; reuse these IDs to retry)`);

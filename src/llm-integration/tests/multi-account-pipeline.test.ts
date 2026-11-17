@@ -9,6 +9,9 @@ import type { ChatMessage } from '../agent/client.js';
 import type { GoogleCalendarEvent } from '../../calendar/client.js';
 import type { Env } from '../../types/env.js';
 import { localD1 } from './fixtures.js';
+import { Hono } from 'hono';
+import { createDirectChatRoutes } from '../webhooks/direct-chat.js';
+import { createServices } from '../../runtime/factory.js';
 
 function futureClass() {
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' });
@@ -26,7 +29,7 @@ test('signed webhooks → production queue/factory/agent → correct trainer cal
     const privateKey = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey('pkcs8', keys.privateKey)).toString('base64')}\n-----END PRIVATE KEY-----`;
     let wakeups = 0, acknowledgements = 0, modelCalls = 0;
     const env: Env = { DB: db, META_APP_SECRET: 'test-webhook-secret', META_VERIFY_TOKEN: 'verify', META_GRAPH_API_VERSION: 'v26.0',
-      META_MESSAGING_MODE: 'live', MULTI_ACCOUNT_ENABLED: 'true', OPENAI_API_KEY: 'model-test-token',
+      META_MESSAGING_MODE: 'live', MULTI_ACCOUNT_ENABLED: 'true', OPENAI_API_KEY: 'model-test-token', DIRECT_CHAT_TOKEN: 'operator-test-token',
       META_INSTAGRAM_ACCOUNT_ID: 'wrong-legacy-account', META_INSTAGRAM_ACCESS_TOKEN: 'never-use-legacy-token',
       GOOGLE_CALENDAR_ID: 'general-calendar', GOOGLE_CLIENT_EMAIL: 'bot@example.com', GOOGLE_PRIVATE_KEY: privateKey,
       ACCOUNT_CREDENTIAL_KEYS: JSON.stringify({ v1: btoa('a'.repeat(32)) }), ACCOUNT_CREDENTIAL_ACTIVE_KEY: 'v1',
@@ -55,10 +58,12 @@ test('signed webhooks → production queue/factory/agent → correct trainer cal
         const context = request.messages.find((entry) => entry.role === 'tool' && entry.tool_call_id === 'customer-context');
         assert.ok(context);
         const details = JSON.parse(context.content!);
-        assert.ok(cases.some((item) => item.name === details.confirmedName));
+        if (!details.confirmedName) return Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '¿A qué nombre hacemos tu reserva?' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 } });
+        assert.ok(cases.some((item) => item.name === details.confirmedName) || details.confirmedName === 'Operator Test');
         return Response.json({ choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null,
           tool_calls: [{ id: `proposal-${modelCalls}`, type: 'function', function: { name: 'proposeTrial', arguments: JSON.stringify({
-            name: details.confirmedName, phone: null, instagramHandle: 'ignored', startsAt,
+            name: details.confirmedName, phone: null, instagramHandle: details.instagramDm ? 'ignored' : null, startsAt,
           }) } }] } }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
       }
       if (url.hostname === 'oauth2.googleapis.com') {
@@ -76,9 +81,10 @@ test('signed webhooks → production queue/factory/agent → correct trainer cal
           return event ? Response.json(event) : new Response(null, { status: 404 });
         }
         const body = JSON.parse(String(init.body)) as GoogleCalendarEvent;
-        assert.equal(init.method, 'POST');
-        assert.equal(calendar.has(body.id), false);
-        const event = { ...body, etag: '"v1"' }; calendar.set(body.id, event);
+        assert.ok(init.method === 'POST' || init.method === 'PATCH');
+        if (init.method === 'POST') assert.equal(calendar.has(body.id), false);
+        else assert.equal(headers.get('If-Match'), calendar.get(body.id)?.etag);
+        const event = { ...body, etag: init.method === 'POST' ? '"v1"' : '"v2"' }; calendar.set(body.id, event);
         return Response.json(event);
       }
       if (url.hostname === 'graph.instagram.com') {
@@ -102,6 +108,7 @@ test('signed webhooks → production queue/factory/agent → correct trainer cal
     const receive = async (confirm: boolean) => {
       const payload = JSON.stringify({ object: 'instagram', entry: [{ messaging: cases.map((item) => ({
         sender: { id: item.sender }, recipient: { id: item.account }, timestamp: Date.now(),
+        operatorTestAccountId: 'instagram:2002', // Untrusted webhook extensions must not select another account.
         message: { mid: `${confirm ? 'confirm' : 'details'}-${item.sender}`, text: confirm ? 'sí'
           : `Soy ${item.name}, quiero reservar el ${dallasDate(startsAt)} a las 08:00, ${item.phone}` },
       })) }] });
@@ -131,5 +138,30 @@ test('signed webhooks → production queue/factory/agent → correct trainer cal
     }
     assert.equal((await db.prepare("SELECT count(*) AS n FROM message_inbox WHERE state='processed'").first<{ n: number }>())?.n, 6);
     assert.equal((await db.prepare("SELECT count(*) AS n FROM outgoing_messages WHERE state='accepted'").first<{ n: number }>())?.n, 6);
+    const app = new Hono<{ Bindings: Env }>().route('/test/chat', createDirectChatRoutes());
+    const now = new Date().toISOString();
+    await assert.rejects(createServices(env).processor({ identity: { channel: 'instagram', businessAccountId: '2001', senderId: '1001' },
+      providerMessageId: 'forged-operator-target', text: 'integration test', sentAt: now, receivedAt: now, operatorTestAccountId: 'instagram:2002' }), /protected direct-chat namespace/);
+    const sendOperator = (messageId: string, text: string, authenticated = true) => app.request('/test/chat', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(authenticated ? { Authorization: 'Bearer operator-test-token' } : {}) },
+      body: JSON.stringify({ conversationId: 'operator-routing', messageId, text, targetSocialAccountId: 'instagram:2001' }) }, env);
+    assert.equal((await sendOperator('denied', 'hola', false)).status, 401);
+    const details = await sendOperator('details', `Soy Operator Test, quiero reservar el ${dallasDate(startsAt)} a las 08:00, +12145550199`);
+    assert.equal(details.status, 200);
+    assert.equal((await details.json() as { bookingStatus: string }).bookingStatus, 'awaiting_confirmation');
+    const missingTarget = await app.request('/test/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer operator-test-token' },
+      body: JSON.stringify({ conversationId: 'operator-routing', messageId: 'confirmation', text: 'sí' }) }, env);
+    assert.equal((await missingTarget.json() as { bookingStatus: string }).bookingStatus, 'none', 'omitting a target cannot approve its proposal in the general calendar');
+    const confirmed = await sendOperator('confirmation', 'sí');
+    assert.equal(confirmed.status, 200);
+    const result = await confirmed.json() as { bookingStatus: string; operatorTest: boolean; booking: { calendar: { calendarId: string } }; calendarEvent: { description: string } };
+    assert.equal(result.bookingStatus, 'confirmed'); assert.equal(result.operatorTest, true);
+    assert.equal(result.booking.calendar.calendarId, cases[0]!.calendar);
+    assert.match(result.calendarEvent.description, /Operator Test/);
+    assert.doesNotMatch(result.calendarEvent.description, /Clara/);
+    assert.equal(outgoing.length, 6, 'operator test replies must never be sent to Meta');
+    const operatorBooking = await db.prepare("SELECT distribuidora_id,social_account_id,origin_channel FROM bookings b JOIN customers c ON c.id=b.customer_id WHERE c.name='Operator Test'").first();
+    assert.deepEqual(operatorBooking, { distribuidora_id: a.id, social_account_id: 'instagram:2001', origin_channel: 'operator_test' });
+    assert.equal((await db.prepare("SELECT count(*) AS n FROM notification_jobs j JOIN bookings b ON b.id=j.booking_id JOIN customers c ON c.id=b.customer_id WHERE c.name='Operator Test'").first<{ n: number }>())?.n, 0);
   } finally { globalThis.fetch = original; await dispose(); }
 });
