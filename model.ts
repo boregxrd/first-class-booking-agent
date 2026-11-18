@@ -30,6 +30,8 @@ export interface InboundMessage {
   sentAt: Instant;
   receivedAt: Instant;
   text: string;
+  /** Set only by authenticated direct-chat transport, never by Meta input or model arguments. */
+  operatorTestAccountId?: string;
 }
 
 export interface ConsentEvidence {

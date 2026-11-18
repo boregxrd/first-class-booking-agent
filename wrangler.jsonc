@@ -7,6 +7,11 @@
 		"nodejs_compat"
 	],
 	"vars": {
+		"MULTI_ACCOUNT_ENABLED": "true",
+		"ADMIN_ORIGIN": "https://first-class-booking-agent.dallaswellnessclubweb.workers.dev",
+		"ACCOUNT_CREDENTIAL_ACTIVE_KEY": "v1",
+		"GOOGLE_OWNER_EMAIL": "dallaswellnessclubweb@gmail.com",
+		"WHATSAPP_ATTRIBUTION_TEMPLATES": "false",
 		"META_INSTAGRAM_ACCOUNT_ID": "17841450775304205",
 		"META_GRAPH_API_VERSION": "v26.0",
 		"META_MESSAGING_MODE": "live",

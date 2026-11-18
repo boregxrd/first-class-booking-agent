@@ -21,7 +21,7 @@ function page(title: string, content: string) {
 <body><main>
   <nav aria-label="Privacy information"><a href="/privacy">Privacy policy</a> · <a href="/data-deletion">Data deletion instructions</a></nav>
   <h1>${title}</h1>
-  <p class="updated">Dallas Wellness Club · First-Class Booking Agent<br>Last updated: October 7, 2026</p>
+  <p class="updated">Dallas Wellness Club · First-Class Booking Agent<br>Last updated: November 17, 2026</p>
   ${content}
   <footer><p>Contact: <a href="mailto:${contact}">${contact}</a></p></footer>
 </main></body>
@@ -29,30 +29,39 @@ function page(title: string, content: string) {
 }
 
 const privacy = page('Privacy policy', `
-  <p>This policy describes how Dallas Wellness Club's First-Class Booking Agent handles information when you message the connected Instagram account, use the booking assistant, or use WhatsApp booking messaging when that feature is enabled. The assistant helps prospective customers ask questions and book, reschedule, or cancel a free trial class.</p>
+  <p>This policy describes how Dallas Wellness Club's First-Class Booking Agent handles information when you message an authorized connected Instagram account, use the booking assistant, or use WhatsApp booking messaging when enabled. It also covers the gym's owner-operated onboarding of distribuidoras and their social accounts/calendars. The assistant helps prospective customers ask questions and book, reschedule, or cancel a free trial class.</p>
   <h2>Information the application handles</h2>
   <ul>
     <li>Messages you send and the assistant's replies, including information you choose to share.</li>
     <li>Your channel-specific account identifiers, message identifiers and timestamps; your name, Instagram handle, preferred language, and phone number if provided.</li>
     <li>Trial booking dates, times, status, booking identifiers and Calendar event references.</li>
     <li>Messaging consent and opt-out records; delivery status, errors, retry information and operational identifiers used to keep bookings and messages reliable.</li>
+    <li>For distribuidora onboarding: name, calendar-sharing email, active status, connected professional account identifiers/handles, account permissions and connection status, calendar assignment, invitation status and timestamps.</li>
+    <li>Provider authorization credentials and expiry/refresh information needed for authorized integrations. Stored credentials are encrypted. OAuth state, private invitation links and short-lived encrypted retry checkpoints help protect account connections.</li>
   </ul>
   <p>The application does not need your Instagram password or payment-card details. Please do not send passwords, payment information or sensitive medical information in the booking chat.</p>
   <h2>How information is used</h2>
   <p>Information is used to respond to gym questions, maintain conversation context, prepare and manage trial bookings, display class rosters to gym staff, send permitted booking messages when enabled, honor opt-outs, and prevent duplicate bookings or messages. Operational information is used to investigate failures and recover interrupted work.</p>
+  <h2>Connected accounts, calendars and staff invitation emails</h2>
+  <p>Professional account holders authorize their own Instagram connection using Meta's login pages; the application does not collect their Instagram passwords. The receiving social account determines the booking's distribuidora attribution and calendar. Existing bookings keep their saved calendar and attribution when account configuration changes.</p>
+  <p>Only the gym Google account authorizes creation and sharing of gym-owned calendars. Distribuidoras receive calendar access through their own email/Google account; they do not grant this app management access to personal Google calendars. Calendar visibility follows sharing permissions. Authorized gym owners can access gym calendars, and the onboarding flow grants each distribuidora read-only access to her assigned calendar.</p>
+  <p>With separate send-only Gmail consent from the gym account, the owner can email private Instagram connection invitations to registered distribuidoras. The app does not request Gmail inbox-reading access. Calendar-sharing notifications and account-connection emails are separate. A private connection invitation does not grant owner portal access. Disconnecting locally stops new account routing but does not itself revoke provider authorization or delete related records; an authorized operator can handle revocation and deletion requests.</p>
   <h2>AI-assisted conversations</h2>
   <p>Responses are generated with assistance from OpenAI. The application sends recent conversation context and relevant gym or booking information to OpenAI to generate responses and tool requests. Booking actions are validated by the application and require an explicit confirmation. Model API requests set <code>store: false</code>; this does not mean the provider has no processing, security-log or retention obligations under its own policies.</p>
+  <p>The application does not pass its stored provider credentials or its onboarding authorization codes to the language model.</p>
   <h2>Service providers and staff access</h2>
   <ul>
     <li><strong>Meta / Instagram:</strong> delivers Instagram messages and accepts replies. Meta / WhatsApp provides WhatsApp messaging when enabled.</li>
     <li><strong>Cloudflare:</strong> hosts the application, stores conversation and booking data in D1, and runs background queues and operational logging.</li>
     <li><strong>OpenAI:</strong> processes conversation context to generate AI-assisted responses.</li>
     <li><strong>Google Calendar:</strong> displays trial rosters containing names, provided contact details, language and booking identifiers. Gym staff and authorized operators with access to the booking calendar can view these rosters.</li>
+    <li><strong>Google authorization and Gmail:</strong> maintain the gym's authorized calendar access and, when consented/configured, send owner-triggered staff connection invitations. Google also processes its calendar-sharing notifications.</li>
   </ul>
   <p>Each provider also handles information under its own applicable terms and privacy policies. Copies held independently by a messaging platform or service provider are not necessarily removed when records are deleted from this application.</p>
   <h2>Retention</h2>
   <p>Scheduled cleanup normally removes stored chat-history text after 30 days and clears processed inbox payloads and completed outgoing-message text on the same schedule. Processed-turn records, which can include copies of replies, and certain deduplication and delivery records are retained for up to 90 days. Pending work may be retained longer to complete or resolve it.</p>
   <p>Customer, booking, consent and some operational records do not currently have an automatic expiry and remain until manually removed. Calendar roster entries also remain until updated or removed. You can request deletion using the instructions linked below. Provider logs, backups and independently retained platform records may follow separate retention schedules.</p>
+  <p>Distribuidora profiles, account configuration and encrypted integration credentials remain until an authorized operator removes or replaces them; token expiry limits use but does not automatically erase its stored encrypted copy. OAuth states normally expire after 15 minutes. Emailed connection links expire after 24 hours and their records/encrypted invitation material are normally cleaned after 90 days beyond expiry. Temporary Instagram retry checkpoints cannot be resumed after their original 10-minute window; bounded cleanup normally removes old checkpoint records after 15 minutes. Pending work or provider-held email copies can follow different retention schedules.</p>
   <h2>Your choices and requests</h2>
   <p>You may ask to correct your details, cancel a trial booking, or request deletion of information held by this application. Cancelling a booking or deleting an Instagram conversation is not itself a request to delete all application records. When WhatsApp messaging is enabled, sending <strong>STOP</strong> opts out of booking confirmations and reminders; it does not delete your data or cancel your booking.</p>
   <p>For access, correction or privacy questions, email <a href="mailto:${contact}">${contact}</a>. For removal requests, follow our <a href="/data-deletion">data deletion instructions</a>. We may ask for limited additional information to verify that a request concerns your own records.</p>
@@ -67,11 +76,13 @@ const deletion = page('Data deletion instructions', `
     <li>Use the subject <strong>Booking agent data deletion request</strong>.</li>
     <li>Tell us the Instagram username you used to contact the gym and which gym account you messaged. If you used WhatsApp, include the phone number used, with its country code.</li>
     <li>If available, include your booking name and trial date or booking ID so we can locate the correct records. Tell us if you also want an upcoming trial booking cancelled.</li>
+    <li>For a distribuidora profile or connected professional account, identify the registered staff email and account username. Do not include provider credentials or private invitation links.</li>
   </ol>
   <p>You may write in English or Spanish. Do not send passwords, access tokens, payment details or identity documents with your initial request.</p>
   <h2>What happens next</h2>
   <p>Requests are handled manually by the gym's authorized operator. We will review the request and may ask you to confirm it from the associated messaging account or provide limited matching information before changing records. You do not need to create a separate app account.</p>
   <p>After verifying your request, we will identify the related conversation, customer, booking and consent records, address pending messages or booking operations, and remove the applicable information from the application's active records and Calendar roster. Where any information must be retained for a legal obligation, we will explain the applicable limitation in our response. We will notify you when the request has been processed or explain any limitation.</p>
+  <p>For staff/account requests, the operator also reviews connected-account authorization, encrypted credentials, profile information, invitations and calendar sharing. Disabling an account in the portal is not by itself a complete data-deletion request. Revoking app access on a provider does not automatically remove all previously stored application records.</p>
   <p>This is an email-based deletion process, not an automatic deletion button or API callback. Provider backups, logs or records held independently by Meta, OpenAI, Cloudflare or Google may follow their own retention and deletion processes. Deleting our application records does not automatically delete your Instagram or WhatsApp message history.</p>
   <h2>Cancellation and opt-out are separate</h2>
   <p>Cancelling a class removes you from its active roster but does not erase all stored records. Sending <strong>STOP</strong> disables applicable WhatsApp notifications but does not delete your records. Email us explicitly to request data deletion.</p>

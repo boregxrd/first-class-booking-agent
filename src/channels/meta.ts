@@ -6,6 +6,7 @@ import { canProcessMessages } from '../llm-integration/runtime/test-access.js';
 import { ingest } from '../llm-integration/runtime/inbox.js';
 import { D1NotificationStatusHandler } from '../notifications/scheduler.js';
 import { isOptOut, revokeNotifications } from '../llm-integration/conversations/controls.js';
+import { AccountStore } from '../accounts/store.js';
 
 const id = z.string().min(1).max(512);
 const timestamp = z.number().finite().nonnegative().max(8.64e15);
@@ -74,15 +75,23 @@ export async function processMetaWebhook(rawBody: string, signature: string | un
     }
   }
   if (messages.some((message) => Date.parse(message.sentAt) > Date.parse(now) + 300_000)) return { status: 400, message: 'Invalid message timestamp' };
-  const accepted = messages.filter((message) => {
+  const accepted: InboundMessage[] = [];
+  for (const message of messages) {
     if (!canProcessMessages(message.identity, env)) {
       console.info('[Webhook observed]', { channel: message.identity.channel, senderId: message.identity.senderId, account: message.identity.businessAccountId });
-      return false;
+      continue;
+    }
+    if (env.MULTI_ACCOUNT_ENABLED === 'true') {
+      if (!env.DB) return { status: 503, message: 'Database not configured' };
+      const route = await new AccountStore(env.DB).resolve(message.identity);
+      if (route) accepted.push(message);
+      else console.info('[Webhook account unavailable]', { channel: message.identity.channel, account: message.identity.businessAccountId });
+      continue;
     }
     const account = message.identity.channel === 'instagram' ? env.META_INSTAGRAM_ACCOUNT_ID : env.META_WHATSAPP_PHONE_NUMBER_ID;
-    return Boolean(account && account === message.identity.businessAccountId);
-  });
-  if (messages.some((message) => canProcessMessages(message.identity, env)
+    if (account && account === message.identity.businessAccountId) accepted.push(message);
+  }
+  if (env.MULTI_ACCOUNT_ENABLED !== 'true' && messages.some((message) => canProcessMessages(message.identity, env)
     && !(message.identity.channel === 'instagram' ? env.META_INSTAGRAM_ACCOUNT_ID : env.META_WHATSAPP_PHONE_NUMBER_ID))) {
     return { status: 503, message: 'Channel account not configured' };
   }
@@ -92,7 +101,11 @@ export async function processMetaWebhook(rawBody: string, signature: string | un
       for (const message of accepted) if (isOptOut(message.text)) await revokeNotifications(env.DB, message.identity, now);
       await ingest(env.DB, accepted, env.MESSAGE_QUEUE);
     }
-    for (const update of updates.filter((update) => update.businessAccountId === env.META_WHATSAPP_PHONE_NUMBER_ID)) {
+    for (const update of updates) {
+      const recognized = env.MULTI_ACCOUNT_ENABLED === 'true' && env.DB
+        ? await env.DB.prepare("SELECT 1 FROM social_accounts WHERE platform='whatsapp' AND provider_account_id=?").bind(update.businessAccountId).first()
+        : update.businessAccountId === env.META_WHATSAPP_PHONE_NUMBER_ID;
+      if (!recognized) continue;
       if (!env.DB) return { status: 503, message: 'Database not configured' };
       await new D1NotificationStatusHandler(env.DB).handleDeliveryUpdate(update);
     }

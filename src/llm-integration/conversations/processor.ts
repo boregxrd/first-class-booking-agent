@@ -6,7 +6,8 @@ import { agentTools, isScheduledTime, proposalSchema, rescheduleSchema, cancelSc
 import type { ConversationState, ConversationStore, TurnResult } from './store.js';
 import type { ConversationControls } from './controls.js';
 import { isInstagramDm, type InstagramProfile } from '../../channels/instagram-profile.js';
-import { dateHasClasses, isSelectedSlot, selectedSlotInstant, updateBookingIntake } from './intake.js';
+import { dateHasClasses, dallasDate, isSelectedSlot, selectedSlotInstant, updateBookingIntake } from './intake.js';
+import { calendarFacts, calendarIssueReply, calendarReplyCorrection, localDateDescription } from './calendar-facts.js';
 
 const FLOW_INSTRUCTIONS = `IMPLEMENTACIÓN ACTUAL
 Usa getBooking para consultar la reserva de esta clienta. proposeReschedule y proposeCancellation solo preparan un cambio/cancelación: el procesador pide confirmación antes de ejecutarlo. Nunca muevas ni borres un evento compartido de Calendar.
@@ -128,8 +129,21 @@ export function createConversationProcessor(dependencies: {
       const currentSelection = updateBookingIntake(undefined, message.text, now, schedule);
       state.bookingIntake = updateBookingIntake(state.bookingIntake, message.text, now, schedule);
       const intake = state.bookingIntake;
+      const today = dallasDate(now);
+      if (intake.dateIssue) {
+        state.proposal = null;
+        return finish(calendarIssueReply(intake.dateIssue, today, language), 'none');
+      }
+      if (intake.date && intake.date < today) {
+        state.proposal = null;
+        return finish(language === 'es' ? `La fecha ${localDateDescription(intake.date, language)} ya pasó. ¿Qué fecha futura prefieres?`
+          : `${localDateDescription(intake.date, language)} is in the past. Which future date would you prefer?`, 'none');
+      }
       const lastQuestion = state.history.filter((entry) => entry.role === 'assistant').at(-1)?.content ?? '';
-      const explicitName = message.text.match(/\b(?:mi nombre es|me llamo|my name is|soy)\s+([^,+.!?\n]+)/i)?.[1]?.split(/\s+(?:y|and|quiero|i want)\s+/i)[0]?.trim();
+      const declaration = message.text.match(/\b(mi nombre es|me llamo|my name is|soy)\s+([^,+.!?\n]+)/i);
+      const candidateName = declaration?.[2]?.split(/\s+(?:y|and|quiero|i want)\s+/i)[0]?.trim();
+      const claimsRole = declaration?.[1]?.toLowerCase() === 'soy' && /^(?:el |la )?(?:programador\w*|desarrollador\w*|developer|tester|administrador\w*|admin|propietari\w*|dueñ\w*)\b/i.test(candidateName ?? '');
+      const explicitName = claimsRole ? undefined : candidateName;
       const nameAnswer = /(?:a qué nombre|a que nombre|what name|perfil de Instagram muestra|Instagram profile shows)/i.test(lastQuestion) ? message.text.trim() : undefined;
       const providedName = explicitName ?? nameAnswer;
       if (providedName && /^[\p{L}\p{M}][\p{L}\p{M}'’ -]{0,99}$/u.test(providedName)
@@ -222,6 +236,7 @@ export function createConversationProcessor(dependencies: {
         instagramHandle: state.customer.instagramHandle ?? null,
         unconfirmedProfileName: instagramDm ? state.instagramProfile?.name ?? null : null,
         selectedDate: intake.date, selectedTime: intake.time,
+        selectedCalendarFacts: intake.date ? calendarFacts(intake.date, schedule) : null,
         providedPhone: intake.phone, phoneUnavailable: intake.phoneUnavailable,
       });
       const messages: ChatMessage[] = [
@@ -247,6 +262,15 @@ export function createConversationProcessor(dependencies: {
           // A model-written approval request has no persisted proposal behind it.
           // Only our deterministic summaries may ask for these confirmation phrases.
           const content = response.message.content!;
+          const dateCorrection = calendarReplyCorrection(content, today, schedule, intake.date);
+          if (dateCorrection) {
+            messages.push(response.message, { role: 'system', content: dateCorrection });
+            continue;
+          }
+          if (/(?:reserv\w*|agend\w*).{0,60}clase\w* regular|(?:book|reserve).{0,60}regular class/i.test(content)) {
+            messages.push(response.message, { role: 'system', content: 'No tienes herramientas para reservar clases regulares. Ofrece solo información confirmada y no prometas excepciones a la política de prueba gratis. Si existe una reserva previa, no implica asistencia.' });
+            continue;
+          }
           if (/\b(?:nombre femenino|feminine name|female name)\b/i.test(content)
             || (/\b(?:mujeres|women)\b/i.test(content) && /(?:otro nombre|cambi\w* (?:el |tu )?nombre|another name|change (?:your |the )?name)/i.test(content))) {
             return finish(language === 'es' ? 'Gracias. Nuestras clases son exclusivamente para mujeres. Lo siento.' : 'Thank you. Our classes are exclusively for women. I’m sorry.', 'none');
@@ -274,7 +298,8 @@ export function createConversationProcessor(dependencies: {
             else return requestBookingName();
           } else if (call.function.name === 'getClassSchedule') {
             z.object({}).strict().parse(args);
-            toolResult = schedule;
+            toolResult = { ...schedule, todayDallas: today, todayDescription: localDateDescription(today, language),
+              selectedDateFacts: intake.date ? calendarFacts(intake.date, schedule) : null };
           } else if (call.function.name === 'getBooking') {
             z.object({}).strict().parse(args);
             toolResult = await dependencies.bookings.getCurrentBooking({ customerId: state.customer.id, conversationId: state.id, sourceMessageId: message.providerMessageId, requestedAt: now });
@@ -338,6 +363,12 @@ export function createConversationProcessor(dependencies: {
             : `Your free class:\n${summary}${consent}\nReply “yes” to confirm or tell me what to change.`, 'awaiting_confirmation');
         }
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(toolResult) });
+      }
+      if (intake.date) {
+        const facts = calendarFacts(intake.date, schedule), date = localDateDescription(intake.date, language);
+        return finish(language === 'es'
+          ? `${date}: ${facts.hasClasses ? `hay clases a las ${facts.scheduledStartTimes.join(', ')} (Dallas)` : 'no hay clases programadas'}. ¿Qué fecha y hora prefieres para tu clase gratis?`
+          : `${date}: ${facts.hasClasses ? `classes are scheduled at ${facts.scheduledStartTimes.join(', ')} (Dallas)` : 'no classes are scheduled'}. Which date and time would you prefer?`, 'none');
       }
       return finish(language === 'es' ? '¿Me confirmas qué día y hora prefieres para tu clase gratis? 💖' : 'Which day and time would you prefer for your free class? 💖', 'none');
     });

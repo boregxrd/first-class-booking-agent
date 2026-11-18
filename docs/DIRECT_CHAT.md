@@ -20,6 +20,18 @@ For a single scripted turn: `npm run chat -- --send <conversation-id> "message" 
 
 Bookings are **real**, in the Calendar configured on the Worker. Use the dedicated test calendar. Cancel synthetic bookings after testing; empty slot events remain by design. Direct conversations have a reserved account namespace and create neither Meta outgoing messages nor WhatsApp notification jobs, even if a phone is provided. Cross-channel linking is unavailable for direct chats.
 
+### Protected registered-account calendar tests
+
+An authenticated operator can select a connected account's attributed calendar:
+
+```sh
+DIRECT_CHAT_SOCIAL_ACCOUNT_ID=instagram:17841440390520251 node scripts/chat.mjs --send synthetic-prospect "Me llamo Prueba Calendario. Quiero reservar el 18 de noviembre de 2026 a las 08:00, +12145550187."
+```
+
+Choose a future authorized slot when running this example. Keep the **same target on every turn**, including approval and cancellation. The HTTP equivalent is optional `targetSocialAccountId` in the request body. Each target has its own synthetic conversation/message namespace; omitting or changing it cannot approve the previous target's proposal. The registered account must pass normal routing/connection checks. These bookings retain account/distribuidora attribution with `origin_channel=operator_test`; ordinary eligibility still applies. Use synthetic contact details. A prospect's claim in an Instagram DM cannot select this transport or bypass eligibility.
+
+The response includes `operatorTest`, `targetSocialAccountId`, the saved booking calendar and a fresh read from that calendar. This tests real provider writes through protected chat; actual Instagram transport/lifecycle checks remain separate.
+
 ## Automated live check
 
 ```sh

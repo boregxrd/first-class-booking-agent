@@ -14,6 +14,7 @@ const inputSchema = z.object({
   conversationId: identifier,
   messageId: identifier,
   text: z.string().trim().min(1).max(4000),
+  targetSocialAccountId: z.string().regex(/^[a-zA-Z0-9:_-]{1,200}$/).optional(),
 }).strict();
 
 async function authorized(header: string | undefined, token: string) {
@@ -29,6 +30,7 @@ export function createDirectChatRoutes(makeServices: (env: Env) => {
   processor: (message: InboundMessage) => Promise<TurnResult>;
   bookings: BookingService;
   calendarClient: RosterCalendar | null;
+  calendarForId?: (id: string) => RosterCalendar | null;
 } = createServices) {
   const routes = new Hono<{ Bindings: Env }>();
   routes.post('/', async (c) => {
@@ -56,18 +58,24 @@ export function createDirectChatRoutes(makeServices: (env: Env) => {
     if (!c.env.DB || !c.env.OPENAI_API_KEY || !c.env.GOOGLE_CALENDAR_ID || !c.env.GOOGLE_CLIENT_EMAIL || !c.env.GOOGLE_PRIVATE_KEY) {
       return c.json({ error: 'D1, OpenAI and Google Calendar must be configured' }, 503);
     }
-    const identity = { channel: 'instagram' as const, businessAccountId: DIRECT_CHAT_ACCOUNT, senderId: input.conversationId };
+    // A caller forgetting/changing the test target must not approve another target's proposal.
+    const testSender = input.targetSocialAccountId ? `${input.conversationId}:${input.targetSocialAccountId}` : input.conversationId;
+    const identity = { channel: 'instagram' as const, businessAccountId: DIRECT_CHAT_ACCOUNT, senderId: testSender };
     const now = new Date().toISOString();
     try {
       const services = makeServices(c.env);
-      const result = await services.processor({ identity, providerMessageId: `${input.conversationId}:${input.messageId}`, text: input.text, sentAt: now, receivedAt: now });
+      const result = await services.processor({ identity, providerMessageId: `${testSender}:${input.messageId}`, text: input.text, sentAt: now, receivedAt: now,
+        ...(input.targetSocialAccountId ? { operatorTestAccountId: input.targetSocialAccountId } : {}) });
       const customer = await c.env.DB.prepare('SELECT customer_id FROM channel_identities WHERE channel = ? AND business_account_id = ? AND sender_id = ?')
         .bind(identity.channel, identity.businessAccountId, identity.senderId).first<{ customer_id: string }>();
       const latest = customer ? await c.env.DB.prepare('SELECT id FROM bookings WHERE customer_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1')
         .bind(customer.customer_id).first<{ id: string }>() : null;
       const booking = customer && latest ? await services.bookings.getBooking({ customerId: customer.customer_id, conversationId: input.conversationId, sourceMessageId: input.messageId, requestedAt: now }, latest.id) : null;
-      const calendarEvent = booking?.calendar && services.calendarClient ? await services.calendarClient.getEvent(booking.calendar.eventId) : null;
-      return c.json({ conversationId: input.conversationId, messageId: input.messageId, ...result, booking, calendarEvent });
+      const calendar = booking?.calendar ? services.calendarForId?.(booking.calendar.calendarId)
+        ?? (services.calendarClient?.configuredCalendarId === booking.calendar.calendarId ? services.calendarClient : null) : null;
+      const calendarEvent = booking?.calendar && calendar ? await calendar.getEvent(booking.calendar.eventId) : null;
+      return c.json({ conversationId: input.conversationId, messageId: input.messageId, operatorTest: Boolean(input.targetSocialAccountId),
+        targetSocialAccountId: input.targetSocialAccountId ?? null, ...result, booking, calendarEvent });
     } catch (error) {
       if (error instanceof ConversationBusyError) return c.json({ error: 'Conversation busy; retry the same messageId' }, 409);
       if (error instanceof ModelRequestError) return c.json({ error: 'OpenAI request failed', providerStatus: error.status, retryable: error.retryable }, 502);

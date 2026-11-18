@@ -7,7 +7,8 @@ import { alert, later, resolveAlert } from '../llm-integration/runtime/persisten
 export class D1NotificationScheduler {
   constructor(private readonly db: D1Database, private readonly sender: WhatsAppTemplateSender,
     private readonly calendar: RosterCalendar | null,
-    private readonly config: { businessAccountId: string; confirmationTemplate: string; reminderTemplate: string }) {}
+    private readonly config: { businessAccountId: string; confirmationTemplate: string; reminderTemplate: string; includeSource?: boolean },
+    private readonly calendarForId?: (id: string) => RosterCalendar | null) {}
 
   async processDueNotifications(now = new Date().toISOString()): Promise<number> {
     await recoverDeliveries(this.db, 'notification_jobs', now);
@@ -18,19 +19,21 @@ export class D1NotificationScheduler {
       const token = await claimDelivery(this.db, 'notification_jobs', id, now);
       if (!token) continue;
       const job = await this.db.prepare(`SELECT j.booking_id, j.booking_revision, j.kind, b.revision, b.status, b.starts_at,
-        b.event_id, c.name, c.language, c.whatsapp_phone,
+        b.event_id, b.calendar_id, b.origin_channel, b.origin_handle, c.name, c.language, c.whatsapp_phone,
         EXISTS(SELECT 1 FROM booking_operations WHERE booking_id = b.id AND status = 'pending') AS syncing,
         EXISTS(SELECT 1 FROM consents co WHERE co.customer_id = c.id AND co.phone = c.whatsapp_phone
           AND co.purpose = 'trial_confirmation_and_reminders' AND co.revoked_at IS NULL
           AND co.id = (SELECT id FROM consents WHERE customer_id = c.id ORDER BY granted_at DESC, rowid DESC LIMIT 1)) AS consent
         FROM notification_jobs j JOIN bookings b ON b.id = j.booking_id JOIN customers c ON c.id = b.customer_id WHERE j.id = ?`)
         .bind(id).first<{ booking_id: string; booking_revision: number; kind: string; revision: number; status: string; starts_at: string;
-          event_id: string; name: string; language: string; whatsapp_phone: string | null; syncing: number; consent: number }>();
+          event_id: string; calendar_id: string | null; origin_channel: string | null; origin_handle: string | null;
+          name: string; language: string; whatsapp_phone: string | null; syncing: number; consent: number }>();
       if (!job || job.status !== 'confirmed' || job.booking_revision !== job.revision || job.starts_at <= now || !job.whatsapp_phone || !job.consent) {
         await this.db.prepare("UPDATE notification_jobs SET state = 'cancelled', lease_token = NULL WHERE id = ? AND lease_token = ?").bind(id, token).run();
         continue;
       }
-      if (job.syncing || !this.calendar || !await inspectCalendarSlot(this.db, this.calendar, job.starts_at, job.event_id, now)) {
+      const calendar = job.calendar_id ? this.calendarForId?.(job.calendar_id) ?? (this.calendar?.configuredCalendarId === job.calendar_id ? this.calendar : null) : null;
+      if (job.syncing || !calendar || !await inspectCalendarSlot(this.db, calendar, job.starts_at, job.event_id, now)) {
         await this.db.prepare("UPDATE notification_jobs SET state = 'pending', available_at = ?, lease_token = NULL, lease_expires_at = NULL WHERE id = ? AND lease_token = ?")
           .bind(later(now, 300), id, token).run();
         continue;
@@ -52,7 +55,8 @@ export class D1NotificationScheduler {
       let result;
       try { result = await this.sender.sendTemplate({ notificationJobId: id, to: job.whatsapp_phone,
         templateName: job.kind === 'confirmation' ? this.config.confirmationTemplate : this.config.reminderTemplate,
-        languageCode: job.language === 'en' ? 'en_US' : 'es', bodyParameters: [job.name, date, time] }); }
+          languageCode: job.language === 'en' ? 'en_US' : 'es', bodyParameters: [job.name, date, time,
+            ...(this.config.includeSource ? [job.origin_handle ? `${job.origin_channel ?? 'Instagram'} @${job.origin_handle.replace(/^@/, '')}` : 'Dallas Wellness Club'] : [])] }); }
       catch { result = { status: 'unknown' as const, reason: 'sender_interrupted' }; }
       await recordDelivery(this.db, 'notification_jobs', id, token, result, now);
       if (result.status === 'accepted') sent++;

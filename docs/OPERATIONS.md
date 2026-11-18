@@ -4,7 +4,7 @@
 
 1. Install dependencies: `npm ci`; run `npm run typecheck` and `npm test`.
 2. After Cloudflare login, create `dwc-booking-db`, `dwc-messages`, and `dwc-messages-dlq`. Replace the zero UUID in `wrangler.jsonc` with the real D1 ID. Review Cloudflare plan/limits for the configured resources.
-3. Apply **all** migrations in order, including `0005_instagram_profile.sql` and `0006_booking_intake.sql` before deploying profile lookup/explicit booking intake. The local test suite does this on an isolated Miniflare database. Example remote command after account setup: `npx wrangler d1 migrations apply dwc-booking-db --remote`.
+3. Apply **all** migrations in order, including `0008_connection_invitation_emails.sql` before deploying owner invitation-email routes/maintenance, even if multi-account routing remains off. The local test suite does this on an isolated Miniflare database. Example remote command after account setup: `npx wrangler d1 migrations apply dwc-booking-db --remote`. Owner authorization, calendar provisioning, connected-account rollout and credential rotation are documented in [OWNER_PORTAL.md](OWNER_PORTAL.md).
 4. Set secrets/configuration from `.dev.vars.example`. Local `.dev.vars` is not deployed automatically. Use separate Instagram Login and WhatsApp access tokens, the proper account IDs and a supported Graph API version selected in Meta.
 5. Start with `META_MESSAGING_MODE=observe` and `WHATSAPP_NOTIFICATIONS_ENABLED=false`. Enable `test` only with exact sender IDs; WhatsApp IDs in the allowlist contain digits only.
 6. Configure approved template names before enabling notifications. `WHATSAPP_NOTIFICATIONS_ENABLED=true` is a separate opt-in; in test mode recipients must also be on the WhatsApp allowlist.
