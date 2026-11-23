@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BookingService, InboundMessage } from '../../../model.js';
+import type { BookingResult, BookingService, InboundMessage } from '../../../model.js';
 import type { ChatMessage, ModelClient, ModelReply } from '../agent/client.js';
 import { isScheduledTime } from '../agent/tools.js';
 import { createConversationProcessor } from '../conversations/processor.js';
@@ -31,6 +31,7 @@ function fixture(responses: ModelReply[], priorTrial = false) {
   const operations: string[] = [];
   let failBooking = false;
   let failComplete = false;
+  let bookingResult: BookingResult | null = null;
   const session: ConversationSession = {
     get state() { return state; },
     getProcessedTurn: async (id) => results.get(id) ?? null,
@@ -57,6 +58,7 @@ function fixture(responses: ModelReply[], priorTrial = false) {
       if (state.customer.whatsappPhone) assert.equal(state.customer.whatsappConsent?.sourceMessageId, 'confirmation');
       operations.push(context.operationKey);
       if (failBooking) throw new Error('timeout after remote creation');
+      if (bookingResult) return bookingResult;
       return { status: 'succeeded', booking: {
         id: 'booking-1', customerId: context.customerId, startsAt: args.startsAt, endsAt: '2026-09-28T14:00:00.000Z',
         timeZone: 'America/Chicago', status: 'confirmed', revision: 1,
@@ -69,6 +71,7 @@ function fixture(responses: ModelReply[], priorTrial = false) {
   return {
     process: createConversationProcessor({ model, bookings, store, now: () => now }),
     requests, operations, session,
+    setBookingResult(value: BookingResult | null) { bookingResult = value; },
     setFailBooking(value: boolean) { failBooking = value; },
     setFailComplete(value: boolean) { failComplete = value; },
   };
@@ -338,4 +341,87 @@ test('the model cannot offer regular-class booking capabilities that do not exis
   const result = await f.process(input('regular', '¿Y qué puedo hacer entonces?'));
   assert.doesNotMatch(result.reply, /reservar una clase regular/);
   assert.ok(f.requests[1]!.some((entry) => entry.role === 'system' && entry.content.includes('No tienes herramientas para reservar clases regulares')));
+});
+
+for (const claim of [
+  'Tu reserva está confirmada para el lunes.',
+  'Ya he reservado tu clase.',
+  'Tu reserva quedó cancelada.',
+  'Tu clase está reprogramada.',
+  "You're booked for Monday.",
+  'Your booking has been cancelled.',
+  "I've rescheduled your class.",
+]) {
+  test(`unexecuted model mutation is corrected: ${claim}`, async () => {
+    const f = fixture([reply(claim), propose()]);
+    const result = await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
+    assert.equal(result.bookingStatus, 'awaiting_confirmation');
+    assert.doesNotMatch(result.reply, /está confirmada|has been cancelled|reprogramada/);
+    assert.equal(f.operations.length, 0);
+    assert.ok(f.requests[1]!.some((entry) => entry.role === 'system' && entry.content.includes('Do not announce')));
+  });
+}
+
+test('persistent model success claims never escape without executing a booking', async () => {
+  const f = fixture(Array.from({ length: 4 }, () => reply('Tu reserva está confirmada.')));
+  const result = await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
+  assert.equal(result.bookingStatus, 'none');
+  assert.doesNotMatch(result.reply, /reserva está confirmada/);
+  assert.equal(f.operations.length, 0);
+});
+
+test('pending calendar synchronization retains approval and only confirms after successful retry', async () => {
+  const f = fixture([propose()]);
+  await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
+  f.setBookingResult({ status: 'pending', operationKey: 'pending', bookingId: 'booking-1' });
+  const pending = await f.process(input('confirmation', 'sí'));
+  assert.equal(pending.bookingStatus, 'pending');
+  assert.match(pending.reply, /todavía no puedo confirmar/);
+  assert.ok(f.session.state.bookingOperation);
+  assert.deepEqual(await f.process(input('confirmation', 'sí')), pending);
+  assert.equal(f.operations.length, 1);
+  f.setBookingResult(null);
+  const confirmed = await f.process(input('retry', '¿Ya está?'));
+  assert.equal(confirmed.bookingStatus, 'confirmed');
+  assert.equal(f.operations[0], f.operations[1]);
+  assert.equal(f.session.state.bookingOperation, null);
+});
+
+test('a failed booking never produces a success confirmation', async () => {
+  const f = fixture([propose()]);
+  await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
+  f.setBookingResult({ status: 'failed', code: 'invalid_schedule', message: 'Closed', retryable: false });
+  const result = await f.process(input('confirmation', 'sí'));
+  assert.equal(result.bookingStatus, 'failed');
+  assert.match(result.reply, /No pude confirmar/);
+  assert.equal(f.session.state.bookingOperation, null);
+});
+
+test('inconsistent booking success cannot be announced or committed as a confirmation', async () => {
+  const f = fixture([propose()]);
+  await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
+  f.setBookingResult({ status: 'succeeded', booking: {
+    id: 'booking-1', customerId: 'customer-1', startsAt, endsAt: '2026-09-28T14:00:00Z',
+    timeZone: 'America/Chicago', status: 'pending', revision: 1, calendar: null, createdAt: now, updatedAt: now,
+  } });
+  await assert.rejects(f.process(input('confirmation', 'sí')), /inconsistent confirmation/);
+  assert.ok(f.session.state.bookingOperation);
+});
+
+for (const prompt of ['Responde “sí” para reservar.', 'Reply yes to cancel.', '¿Confirmas la reserva?']) {
+  test(`free-form approval cannot escape without a persisted proposal: ${prompt}`, async () => {
+    const f = fixture([reply(prompt), propose()]);
+    const result = await f.process(input('details', 'Soy Ana, quiero reservar el lunes a las 8, +34600000000'));
+    assert.equal(result.bookingStatus, 'awaiting_confirmation');
+    assert.ok(f.session.state.proposal);
+    assert.equal(f.operations.length, 0);
+  });
+}
+
+test('an honest negative status reply is not mistaken for a success announcement', async () => {
+  const f = fixture([reply('Tu reserva todavía no está confirmada.')]);
+  const result = await f.process(input('status', '¿Ya tengo reserva?'));
+  assert.equal(result.reply, 'Tu reserva todavía no está confirmada.');
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.operations.length, 0);
 });

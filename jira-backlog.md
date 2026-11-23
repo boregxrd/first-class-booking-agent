@@ -6,9 +6,9 @@ Backlog compartido de Manu y Félix (Bangfeal). Este archivo es la fuente de ver
 
 | Estado | Tareas |
 |---|---:|
-| Todo | 6 |
-| In progress | 1 |
-| Finished | 9 |
+| Todo | 4 |
+| In progress | 2 |
+| Finished | 11 |
 
 El estado y la verificación de cada tarea se reflejan en su sección y notas; las tareas en Todo siguen pendientes de verificación.
 
@@ -16,8 +16,6 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 
 | ID | Tarea | Responsable | Progreso / notas |
 |---|---|---|---|
-| 2 | Pulir el lenguaje del bot para que suene más natural. | Félix | Pendiente. |
-| 4 | Enviar el mensaje de confirmación solo cuando la reserva esté confirmada. | Félix | Pendiente. |
 | 6 | Conectar WhatsApp mediante el número de teléfono. | Manu | Pendiente coordinar con su hermano el acceso al número del gimnasio; después configurar número/plantillas y verificar entrega real de confirmaciones y recordatorios. Notificaciones deshabilitadas hasta completar la activación. |
 | 10 | Integrar los DMs de TikTok como canal de conversación, igual que WhatsApp e Instagram. | Félix | Pendiente. Asignada a Félix por Manu el 2026-11-14. |
 | 11 | Automatizar mensajes privados a partir de comentarios con palabras clave en Instagram. | Por asignar | Pendiente; dejar para el final. |
@@ -27,12 +25,15 @@ El estado y la verificación de cada tarea se reflejan en su sección y notas; l
 
 | ID | Tarea | Responsable | Progreso / notas |
 |---|---|---|---|
+| 2 | Pulir el lenguaje del bot para que suene más natural. | Félix | Inicio: 2026-11-23. Afinadas instrucciones/ejemplos es/en para contestar primero, evitar invitaciones y muletillas repetidas y moderar emojis; respuestas deterministas de fallo, restricciones y pending más sobrias y precisas. Typecheck, 136/136 tests y diff correctos. Pendiente aceptación de conversaciones con modelo real según docs/CONVERSATION_ACCEPTANCE.md y despliegue. Sin modificar hechos/políticas del gimnasio. |
 | 15 | Preparar y tramitar acceso Meta para conectar cuentas profesionales externas sin alta manual como testers. | Manu | Inicio: 2026-11-17. Acordado con el usuario. Permisos business_basic y business_manage_messages aparecen Ready for testing, 0 llamadas; no acredita aprobación pública. Paquete de justificaciones, demo e instrucciones preparado en docs/META_APP_REVIEW.md y comentario de PR #6. Políticas públicas actualizadas a onboarding/Gmail/retención, verificadas tras desplegar 5ac727f1-02f1-44ba-805e-6a56a3451ca3; fuente firmada en dc082cb al reintentar. Invitación de Instagram Tester aceptada y conexión completada en #14. No enviado a Meta: faltan demo funcional, acceso de revisor y requisitos exactos del formulario. |
 
 ## Finished
 
 | ID | Tarea | Responsable | Resultado / verificación |
 |---|---|---|---|
+| 17 | Actualizar ROADMAP.md para reflejar implementación, verificaciones y trabajo pendiente actuales. | Por asignar | Inicio y finalización: 2026-11-23. Roadmap alineado con backlog: multicuenta, evidencia real fechada, cambios locales #2/#4 sin desplegar, Meta #15, WhatsApp #6 y aceptación pendiente. Sustituido ejemplo Calendar pasado por entrada de fecha futura elegida por operador. Verificados enlaces locales, bloques de código y diff; sin cambios de runtime ni comprobaciones nuevas de producción. |
+| 4 | Enviar el mensaje de confirmación solo cuando la reserva esté confirmada. | Félix | Inicio y finalización: 2026-11-23. Verificadas guardas de resultado confirmado/calendario y añadida corrección de anuncios prematuros y peticiones de aprobación sin propuesta en texto del modelo (es/en, reconocimiento acotado de frases). Pending conserva operación idempotente y no anuncia éxito; fallo y resultado incoherente cubiertos. Typecheck, 136/136 tests y diff correctos. Cambios locales, sin desplegar ni afirmar entrega real. Detalles y límites en docs/CONVERSATION_ACCEPTANCE.md. |
 | 14 | Implementar portal de onboarding, credenciales multicuenta y creación/compartición automática de calendarios. | Manu | Inicio: 2026-11-14. Finalización: 2026-11-17; implementación aceptada por Manu. Portal, credenciales cifradas, provisión/compartición de calendarios e invitaciones implementados. Google/ACLs, Gmail y OAuth Instagram con identidad/suscripción/token largo verificados con proveedores reales; respuestas de dinosaurio confirmadas (11 entradas procesadas/11 salidas aceptadas). Creación/cancelación real por transporte protegido verificada en #16; typecheck/121 tests correctos. Reconexión/lifecycle siguen como validación adicional en el plan, sin afirmarlos probados en vivo. Demo/acceso público Meta corresponden a #15 y activación WhatsApp a #6. |
 | 8 | Implementar soporte para varias cuentas con contexto compartido y calendario de atribución por distribuidora. | Manu | Inicio: 2026-11-14. Finalización: 2026-11-17; implementación aceptada por Manu. Routing, credenciales aisladas, atribución persistente, prevención de duplicados y mutaciones por calendario guardado implementados. Typecheck/121 tests correctos, incluido pipeline simulado para dos distribuidoras y DWC general. Despliegue 1097b88d-8718-4e74-9a23-b2b5bbfe1fe6 con routing activo; respuestas reales de dinosaurio y creación/idempotencia/cancelación atribuida en Google por chat protegido verificadas. Aprobación completa vía DM, comparación general, cambio de horario y desconexión/reconexión quedan como validación adicional documentada, no como pruebas ya realizadas. Acceso público #15, WhatsApp #6 y TikTok #10 permanecen separados. |
 | 16 | Corregir contradicciones de día/fecha y completar prueba autorizada del calendario atribuido sin saltar reglas por DM. | Manu | Inicio y finalización: 2026-11-17. Fechas/Dallas/horarios calculados, rechazo de contradicciones y propuestas obsoletas, guardas contra capacidades inexistentes y claims de programador. Transporte protegido con destino registrado y namespace aislado; mantiene elegibilidad. Typecheck, 121 tests, sintaxis CLI y diff correctos. Desplegado 1097b88d-8718-4e74-9a23-b2b5bbfe1fe6. Prueba real trial_400a1a8e-bb49-4121-9ad0-39c573cac6c9 en DWC — dinosaurio para miércoles 18/11 08:00 Dallas: confirmación, replay sin duplicado, cancelación revision 2 y Google con 0 prospects. D1 confirmó atribución operator_test y 0 notificaciones; regresión real rechazó martes 18 sin crear reserva. Historial personal conservado. Detalles en handoff §13; validaciones adicionales de Instagram documentadas en el plan. |
