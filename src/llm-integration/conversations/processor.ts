@@ -27,6 +27,21 @@ function isConfirmation(text: string): boolean {
 }
 
 const normalized = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+// This is a bounded wording guard, in addition to the booking service checks.
+// It does not interpret model prose as evidence that a mutation happened.
+function claimsCompletedMutation(content: string): boolean {
+  const plain = normalized(content).replace(/[’‘]/g, "'")
+    .replace(/(?:tu )?(?:reserva|clase|cita) (?:todavia |aun )?no (?:esta|ha sido|quedo) (?:confirmada|reservada|cancelada|reprogramada)/g, '')
+    .replace(/your (?:booking|class|reservation) (?:is not|isn't|has not been|hasn't been) (?:confirmed|booked|cancelled|canceled|rescheduled)/g, '');
+  return [
+    /(?:ya\s+)?(?:he|hemos)\s+(?:reservado|confirmado|agendado|cancelado|cambiado|reprogramado)/,
+    /(?:te|la|lo)\s+(?:reserve|agende|cancele|reprograme)\b/,
+    /(?:tu\s+)?(?:reserva|clase|cita|horario)\s+(?:(?:ya|ha|esta|quedo|fue|se)\s+)*(?:confirmad[ao]|reservad[ao]|agendad[ao]|cancelad[ao]|cambiad[ao]|reprogramad[ao])/,
+    /(?:you(?:'re| are)|your (?:booking|class|reservation|appointment) (?:is|has been|was))\s+(?:all set|booked|confirmed|cancelled|canceled|rescheduled|moved)/,
+    /(?:i(?:'ve| have)?|we(?:'ve| have)?)\s+(?:booked|confirmed|cancelled|canceled|rescheduled|moved)\b/,
+  ].some((pattern) => pattern.test(plain));
+}
+
 function acceptsProfileName(text: string, name: string): boolean {
   const answer = normalized(text).replace(/[.!¡¿?]+$/g, '').trim();
   return answer === normalized(name) || /^(si|yes|correcto|correcta|si correcto|si ese es mi nombre|ese es mi nombre|si esta bien|esta bien|that's my name|that is my name|yes that's my name|yes that is my name)$/.test(answer);
@@ -90,23 +105,23 @@ export function createConversationProcessor(dependencies: {
             ? await dependencies.bookings.rescheduleTrial(operation.context, { bookingId: operation.bookingId!, expectedRevision: operation.expectedRevision!, startsAt: operation.startsAt })
             : await dependencies.bookings.bookTrial(operation.context, { startsAt: operation.startsAt });
         if (result.status === 'pending') {
-          return finish(language === 'es' ? 'Tu reserva todavía se está procesando; aún no está confirmada 💖.' : 'Your booking is still processing; it is not confirmed yet 💖.', 'pending');
+          return finish(language === 'es' ? 'Estamos procesando tu solicitud; todavía no puedo confirmar que se haya completado.' : 'We’re processing your request; I can’t confirm it is complete yet.', 'pending');
         }
         if (result.status === 'failed') {
           if (result.retryable) throw new Error('Booking dependency temporarily unavailable; retry the checkpointed action');
           state.bookingOperation = null;
           if (result.code === 'trial_not_eligible') {
             return finish(language === 'es'
-              ? 'Según nuestros registros, ya tienes una reserva confirmada para una clase de prueba en los últimos 30 días, así que no puedo reservar otra clase gratis todavía 💖.'
-              : 'Our records show a confirmed trial booking for this contact within the last 30 days, so I can’t book another free trial yet 💖.', 'failed');
+              ? 'Según nuestros registros, ya tienes una reserva confirmada para una clase de prueba en los últimos 30 días, así que no puedo reservar otra clase gratis todavía.'
+              : 'Our records show a confirmed trial booking for this contact within the last 30 days, so I can’t book another free trial yet.', 'failed');
           }
-          return finish(language === 'es' ? 'No pude confirmar tu reserva. Podemos intentar de nuevo o elegir otro horario 💖.' : 'I could not confirm your booking. We can try again or choose another time 💖.', 'failed');
+          return finish(language === 'es' ? 'No pude confirmar tu reserva. Podemos intentar de nuevo o elegir otro horario.' : 'I could not confirm your booking. We can try again or choose another time.', 'failed');
         }
         if (result.booking.customerId !== state.customer.id) throw new Error('Booking ownership mismatch');
         if (operation.action === 'cancel') {
           if (result.booking.status !== 'cancelled') throw new Error('Cancellation not completed');
           state.bookingOperation = null;
-          return finish(language === 'es' ? 'Tu reserva está cancelada. 💖 Si quieres venir otro día, podemos revisar los horarios.' : 'Your booking is cancelled. 💖 We can look at another day whenever you’re ready.', 'cancelled');
+          return finish(language === 'es' ? 'Tu reserva está cancelada. Si quieres venir otro día, podemos revisar los horarios.' : 'Your booking is cancelled. We can look at another day whenever you’re ready.', 'cancelled');
         }
         if (result.booking.status !== 'confirmed' || !result.booking.calendar
           || Date.parse(result.booking.startsAt) !== Date.parse(operation.startsAt)) {
@@ -166,7 +181,7 @@ export function createConversationProcessor(dependencies: {
         }
         if (Date.parse(proposal.expiresAt) <= Date.parse(now) || (proposal.action !== 'cancel' && !isScheduledTime(proposal.startsAt, schedule, now))) {
           state.proposal = null;
-          return finish(language === 'es' ? 'Ese resumen ya venció o el horario cambió. ¿Qué día y hora prefieres? 💖' : 'That summary expired or the schedule changed. Which day and time would you prefer? 💖', 'none');
+          return finish(language === 'es' ? 'Ese resumen ya venció o el horario cambió. ¿Qué día y hora prefieres?' : 'That summary expired or the schedule changed. Which day and time would you prefer?', 'none');
         }
         if (proposal.action === 'book') state.customer = {
           ...state.customer, name: proposal.name, whatsappPhone: proposal.phone, instagramHandle: proposal.instagramHandle, updatedAt: now,
@@ -275,7 +290,13 @@ export function createConversationProcessor(dependencies: {
             || (/\b(?:mujeres|women)\b/i.test(content) && /(?:otro nombre|cambi\w* (?:el |tu )?nombre|another name|change (?:your |the )?name)/i.test(content))) {
             return finish(language === 'es' ? 'Gracias. Nuestras clases son exclusivamente para mujeres. Lo siento.' : 'Thank you. Our classes are exclusively for women. I’m sorry.', 'none');
           }
-          if (/\b(?:yes\s+(?:confirm|cancel|reschedule)|s[ií]\s+confirmo)\b/i.test(content)) {
+          // The model may describe a verified existing booking, but may never
+          // announce a mutation: only executeBooking knows its committed result.
+          if (claimsCompletedMutation(content)) {
+            messages.push(response.message, { role: 'system', content: 'Do not announce booking, rescheduling or cancellation success in model text. Only the processor can announce a completed mutation after checking the booking service result. Use the appropriate proposal tool for a requested action. For status questions, use getBooking and describe the returned record as an existing record without claiming you performed an action.' });
+            continue;
+          }
+          if (/\b(?:yes\s+(?:confirm|cancel|reschedule)|s[ií]\s+confirmo|(?:responde|di|escribe)\s+[“\"']?s[ií]|reply\s+[“\"']?yes|confirmas\s+(?:la|tu)\s+(?:reserva|clase|cancelaci[oó]n|cambio))\b/i.test(normalized(content))) {
             messages.push(response.message, { role: 'system', content: 'No proposal has been saved. Do not ask for confirmation in plain text. Call the appropriate proposal tool now if you have the required details; otherwise ask only for the missing details.' });
             continue;
           }
@@ -334,8 +355,8 @@ export function createConversationProcessor(dependencies: {
               customerId: state.customer.id, conversationId: state.id, sourceMessageId: message.providerMessageId, requestedAt: now,
             }, { phone: proposal.phone, instagramHandle: proposal.instagramHandle })) {
               return finish(language === 'es'
-                ? 'Según nuestros registros, ya tienes una reserva confirmada para una clase de prueba en los últimos 30 días, así que no puedo reservar otra clase gratis todavía 💖.'
-                : 'Our records show a confirmed trial booking for this contact within the last 30 days, so I can’t book another free trial yet 💖.', 'none');
+                ? 'Según nuestros registros, ya tienes una reserva confirmada para una clase de prueba en los últimos 30 días, así que no puedo reservar otra clase gratis todavía.'
+                : 'Our records show a confirmed trial booking for this contact within the last 30 days, so I can’t book another free trial yet.', 'none');
             } else {
               validatedProposal = proposal;
             }
